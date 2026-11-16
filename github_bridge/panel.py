@@ -131,6 +131,8 @@ class PanelAPI:
         cfg = self.service.settings.value
         if not cfg.target_umo:
             raise ValueError("导入前请先保存管理员私聊目标")
+        if not cfg.github_owner:
+            raise ValueError("导入前请先保存自己的 GitHub 用户名")
         parsed = parse_legacy(data.get("sent"), data.get("failed"), cfg)
         imported, queued = self.service.store.import_records(
             cfg.identity, cfg.target_umo, parsed.seen, parsed.failed

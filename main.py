@@ -27,7 +27,7 @@ HELP = """GitHub Bridge · 管理员私聊
 /gh fromgroup 群号 仓库 | 标题 | 补充说明 — 将最近 20 条群文本放入草稿
 /gh confirm 草稿码 — 确认发布到 GitHub
 /gh cancel 草稿码 — 取消草稿
-管理面板位于 AstrBot Dashboard → 插件 → GitHub Bridge → 可视化视图，使用 Dashboard 登录，无独立端口或口令。仓库可以用 gdust-v2 或完整 owner/repo；只有允许列表内的本人仓库可提交。草稿 15 分钟后失效。"""
+管理面板位于 AstrBot Dashboard → 插件 → GitHub Bridge → 可视化视图，使用 Dashboard 登录，无独立端口或口令。仓库可以用仓库名称或完整 owner/repo；只有允许列表内的本人仓库可提交。草稿 15 分钟后失效。"""
 
 
 class GitHubBridge(Star):
@@ -187,7 +187,7 @@ class GitHubBridge(Star):
                     source = repo.split(maxsplit=1)
                     if len(source) != 2 or not source[0].isdigit():
                         raise ValueError(
-                            "请填写 群号 仓库，例如 /gh fromgroup 123456 gdust-v2 | 标题 | 说明"
+                            "请填写 群号 仓库，例如 /gh fromgroup 123456 repo-name | 标题 | 说明"
                         )
                     group_id, repo = source
                     body += (

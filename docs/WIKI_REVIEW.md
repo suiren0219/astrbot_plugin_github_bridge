@@ -1,6 +1,6 @@
-# AstrBot 开发 Wiki 对照审查 · 1.0.1
+# AstrBot 开发 Wiki 对照审查 · 1.0.2
 
-审查日期：2026-11-16。接口基准固定为 AstrBot `v4.29.4`，不将“静态符合规范”视为真实宿主联调通过。
+审查日期：2026-11-16；个人预设清理补充于 2026-11-17。接口基准固定为 AstrBot `v4.29.4`，不将“静态符合规范”视为真实宿主联调通过。
 
 ## 官方依据
 
@@ -11,7 +11,20 @@
 - [Context 实现](https://github.com/AstrBotDevs/AstrBot/blob/v4.29.4/astrbot/core/star/context.py)：`register_web_api(route, handler, methods, desc)`，相同路由和方法替换已有注册。
 - [Web API 实现](https://github.com/AstrBotDevs/AstrBot/blob/v4.29.4/astrbot/api/web.py)：请求上下文、`body()`、`query.get(..., type=int)`、`json_response` 和 `error_response`。
 
-## 本轮修复
+## 1.0.2 个人预设清理补充
+
+1.0.1 只清空了默认私聊目标，仍残留 GitHub 用户名、Issue 仓库允许列表和相应 placeholder；已有 settings.json 还会加载旧值。1.0.2 补齐以下修复：
+
+- 新安装的用户名、Token、私聊目标、Issue 允许列表均为空；允许列表留空不允许创建 Issue。通用的 120 秒 / 每轮 5 条默认值保留。
+- 页面 placeholder、命令帮助、README 和演示仓库采用通用内容；项目作者署名及真实仓库地址保留。
+- 对没有新版配置标记的旧 settings.json，仅清理与旧内置值完全相同的字段。先以 0600 权限备份原文，再清空并暂停监控；备份失败时原配置不改写。
+- 自定义的其他值、Token 和通知数据库保留。配置版本标记使清理只执行一次，用户之后明确输入同样的值也不会再次被清空。
+- 页面显示清理提示，允许暂停状态保存空配置；清理备份被 Git 与安装包排除。
+- `settings_migration.py` 只保留历史值的固定 SHA-256 指纹，已从旧 Git 提交计算并核对；精确匹配时清理，不保留个人明文预设。指纹只是匹配方式，不是凭据保护或匿名化措施。
+
+已用隔离生产 iframe 验证新安装字段为空、升级后提示清理且 Token 只显示“已配置”、空字段可保存；新增 12 项升级测试通过。源码测试和演示夹具已换为通用账号/仓库。
+
+## 1.0.1 Wiki 整理修复
 
 | 问题 | 修复 | 验证 |
 | --- | --- | --- |
@@ -29,7 +42,7 @@
 
 - `main.py` 使用 `Star`、`initialize()`、`terminate()` 和官方消息发送接口；命令内再次校验 AstrBot 管理员及私聊。
 - Web API 在官方示例使用的构造阶段注册，路径包含插件名；本版本 Context 不要求额外的注册归属绑定。未启动独立生产端口。
-- `metadata.yaml` 的名称、版本、仓库、最低 AstrBot 版本和平台声明齐全；包内版本统一为 `1.0.1`。
+- `metadata.yaml` 的名称、版本、仓库、最低 AstrBot 版本和平台声明齐全；包内版本统一为 `1.0.2`。
 - 配置 schema 声明的启动开关已被消费，说明与实际行为一致。
 - `StarTools.get_data_dir(PLUGIN_NAME)` 决定数据目录；设置和 SQLite 不写入插件源目录。
 - GitHub 网络使用 `aiohttp`；第三方依赖已在 `requirements.txt` 声明，没有 `requests` 同步网络调用。
@@ -39,7 +52,7 @@
 
 ## 已完成验证
 
-- **62 项 unittest 全部通过**，含 GitHub mock、存储、迁移、QQ 命令、Web API、生命周期和打包测试。
+- **74 项 unittest 全部通过**，含 GitHub mock、存储、通知迁移、旧配置预设清理、QQ 命令、Web API、生命周期和打包测试。
 - `python -m ruff check .`、`python -m ruff format --check .`、`compileall` 和 `git diff --check`。
 - 浏览器加载的是生产 `views/dashboard`；宿主采用 `sandbox="allow-scripts allow-forms allow-downloads"`，没有 `allow-same-origin`。
 - 配置保存、首次加载、通知筛选、延迟响应竞态及检查排队后的刷新已在该 iframe 中验证。
@@ -48,4 +61,4 @@
 
 本机没有安装完整 AstrBot，也未连接真实 GitHub PAT 或 QQ。官方 Dashboard 外壳、实际加载器热重载、真实 GitHub 权限、QQ 送达仍需部署环境联调。当前浏览器结果证明生产页面在相同 iframe 限制和模拟 bridge 下正常工作，不等于整个 AstrBot 实例已验收。
 
-本轮保持 PR 未合并，未提交插件市场审核。安装包以工作区交付文件及对应验收记录中的 SHA-256 为准。
+插件市场审核尚未提交。安装包以工作区交付文件及对应验收记录中的 SHA-256 为准；代码合并状态以 GitHub PR 页面为准。

@@ -23,6 +23,7 @@ class PackageTests(unittest.TestCase):
                 ".env",
                 ".env.production",
                 "settings.json",
+                "settings.before-preset-cleanup.example.json",
                 "panel.auth.json",
                 "token.key",
                 "cert.pem",

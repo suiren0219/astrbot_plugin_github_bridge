@@ -49,7 +49,7 @@ class FakeGitHub:
         return Observation({"seen": True}, events)
 
     async def test_connection(self):
-        return {"login": "suiren0219", "repository_count": 1}
+        return {"login": "test-owner", "repository_count": 1}
 
     async def create_issue(self, repo, title, body):
         return {"html_url": f"https://github.com/{repo}/issues/1", "number": 1}
@@ -62,6 +62,8 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.settings = SettingsStore(
             self.root,
             {
+                "github_owner": "test-owner",
+                "issue_repositories": "demo-app",
                 "github_token": "unit-test-secret",
                 "target_umo": "platform:FriendMessage:1",
                 "enabled": True,
@@ -86,7 +88,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         await self.service.check()
         self.assertEqual(len(self.sent), 1)
         self.assertIn(":FriendMessage:", self.sent[0][0])
-        self.assertEqual(self.store.counts("suiren0219")["sent"], 1)
+        self.assertEqual(self.store.counts("test-owner")["sent"], 1)
 
     async def test_failed_send_not_counted_as_delivered_and_retry_works_offline(self):
         async def failing_sender(target, content):
@@ -95,11 +97,11 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.service.sender = failing_sender
         await self.service.check()
         await self.service.check()
-        self.assertEqual(self.store.counts("suiren0219")["sent"], 0)
-        failed = self.store.events("suiren0219", "failed")
+        self.assertEqual(self.store.counts("test-owner")["sent"], 0)
+        failed = self.store.events("test-owner", "failed")
         self.assertEqual(len(failed), 1)
         self.assertNotIn("unit-test-secret", failed[0]["last_error"])
-        self.store.retry("suiren0219", self.settings.value.target_umo)
+        self.store.retry("test-owner", self.settings.value.target_umo)
         self.service.client.fail = True
 
         async def working_sender(target, content):
@@ -108,7 +110,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.service.sender = working_sender
         await self.service.check()
         self.assertEqual(len(self.sent), 1)
-        self.assertEqual(self.store.counts("suiren0219")["sent"], 1)
+        self.assertEqual(self.store.counts("test-owner")["sent"], 1)
 
     async def test_pause_does_not_send(self):
         await self.service.update_settings({"enabled": False})
@@ -123,7 +125,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         events = [
             Event(
                 f"e{i}",
-                "suiren0219/demo",
+                "test-owner/demo",
                 "commit",
                 "title",
                 "body",
@@ -167,8 +169,8 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_issue_write_is_allowlisted(self):
         with self.assertRaises(ValueError):
-            await self.service.create_issue("someone/gdust-v2", "title", "body")
-        issue = await self.service.create_issue("gdust-v2", "title", "body")
+            await self.service.create_issue("someone/demo-app", "title", "body")
+        issue = await self.service.create_issue("demo-app", "title", "body")
         self.assertEqual(issue["number"], 1)
 
 
@@ -179,6 +181,7 @@ class WebTests(unittest.IsolatedAsyncioTestCase):
         self.settings = SettingsStore(
             root,
             {
+                "github_owner": "test-owner",
                 "github_token": "never-return-this",
                 "target_umo": "platform:FriendMessage:1",
             },
@@ -225,7 +228,7 @@ class WebTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status, 404)
 
     async def test_legacy_import_endpoint_is_idempotent(self):
-        sent = {"suiren0219/gdust-v2/main": {"a" * 40: [[]]}}
+        sent = {"test-owner/demo-app/main": {"a" * 40: [[]]}}
         response = await self.client.post(
             "/api/import", json={"sent": sent, "failed": []}
         )
