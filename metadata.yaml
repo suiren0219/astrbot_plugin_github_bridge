@@ -1,6 +1,15 @@
 name: astrbot_plugin_github_bridge
 display_name: GitHub Bridge
-version: v1.0.0
+version: 1.0.0
 author: 穗稔
-desc: 自动发现本人 GitHub 仓库，统一私聊推送 Commit、Release、Issue 与仓库动态；附 KSU 风格管理面板和 QQ issue 草稿确认。
+desc: 自动发现本人 GitHub 仓库，统一私聊推送 Commit、Release、Issue 与仓库动态；附 KSU 风格 Dashboard 管理页和 QQ issue 草稿确认。
+short_desc: GitHub 更新自动私聊推送与反馈
+repo: https://github.com/suiren0219/astrbot_plugin_github_bridge
 astrbot_version: ">=4.29.4"
+support_platforms:
+  - aiocqhttp
+tags:
+  - GitHub
+  - 监控
+  - 推送
+  - Issue
