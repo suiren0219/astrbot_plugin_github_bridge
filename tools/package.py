@@ -6,12 +6,39 @@ import io
 import zipfile
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = ROOT.parent / "astrbot_plugin_github_bridge.zip"
-EXCLUDE_PARTS = {"__pycache__", ".pytest_cache", ".git", ".local", ".venv", "dist", "tests", "tools", "web"}
+EXCLUDE_PARTS = {
+    "__pycache__",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".github",
+    ".git",
+    ".local",
+    ".secrets",
+    ".venv",
+    "dist",
+    "tests",
+    "tools",
+    "web",
+}
 EXCLUDE_NAMES = {"settings.json", "panel.auth.json", "requirements.md", ".gitkeep"}
-EXCLUDE_SUFFIXES = {".pyc", ".pyo", ".sqlite3", ".sqlite3-shm", ".sqlite3-wal", ".key"}
+EXCLUDE_SUFFIXES = {
+    ".pyc",
+    ".pyo",
+    ".sqlite3",
+    ".sqlite3-shm",
+    ".sqlite3-wal",
+    ".key",
+    ".pem",
+    ".p12",
+    ".pfx",
+    ".zip",
+    ".log",
+    ".db",
+    ".db-shm",
+    ".db-wal",
+}
 
 
 def files() -> list[Path]:
@@ -20,7 +47,13 @@ def files() -> list[Path]:
         if not path.is_file():
             continue
         relative = path.relative_to(ROOT)
-        if set(relative.parts) & EXCLUDE_PARTS or path.name in EXCLUDE_NAMES or path.suffix in EXCLUDE_SUFFIXES:
+        if (
+            set(relative.parts) & EXCLUDE_PARTS
+            or path.name in EXCLUDE_NAMES
+            or path.name.startswith(".env")
+            or path.is_symlink()
+            or path.suffix in EXCLUDE_SUFFIXES
+        ):
             continue
         result.append(path)
     return sorted(result)

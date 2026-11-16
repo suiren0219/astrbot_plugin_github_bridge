@@ -19,7 +19,9 @@ class Migration:
 def parse_legacy(sent: Any, failed: Any, settings: Settings) -> Migration:
     result = Migration()
     if sent is not None and not isinstance(sent, dict):
-        raise ValueError("sent_notifications.json 应为 仓库 → SHA → 目标组 的 JSON 对象")
+        raise ValueError(
+            "sent_notifications.json 应为 仓库 → SHA → 目标组 的 JSON 对象"
+        )
     if failed is not None and not isinstance(failed, list):
         raise ValueError("failed_notifications.json 应为 JSON 数组")
     if sent is None and failed is None:
@@ -28,7 +30,11 @@ def parse_legacy(sent: Any, failed: Any, settings: Settings) -> Migration:
         raise ValueError("单次最多导入 20000 条记录")
 
     def allowed(repo: str) -> bool:
-        return bool(REPO_PATTERN.fullmatch(repo)) and repo.split("/", 1)[0].casefold() == settings.identity and not settings.excludes(repo)
+        return (
+            bool(REPO_PATTERN.fullmatch(repo))
+            and repo.split("/", 1)[0].casefold() == settings.identity
+            and not settings.excludes(repo)
+        )
 
     for repo_key, commits in (sent or {}).items():
         # branch 可以包含 /，只有最前两段是 owner/repo。
@@ -52,12 +58,17 @@ def parse_legacy(sent: Any, failed: Any, settings: Settings) -> Migration:
             result.skipped += 1
             continue
         owner = repo_info.get("owner") or {}
-        repo = repo_info.get("full_name") or f"{owner.get('login', '') if isinstance(owner, dict) else ''}/{repo_info.get('name', '')}"
+        repo = (
+            repo_info.get("full_name")
+            or f"{owner.get('login', '') if isinstance(owner, dict) else ''}/{repo_info.get('name', '')}"
+        )
         if not isinstance(repo, str) or not allowed(repo):
             result.skipped += 1
             continue
         targets = entry.get("targets", [])
-        if not isinstance(targets, list) or not {str(t).strip() for t in targets}.intersection({target_id, settings.target_umo}):
+        if not isinstance(targets, list) or not {
+            str(t).strip() for t in targets
+        }.intersection({target_id, settings.target_umo}):
             result.skipped += 1
             ignored_targets += 1
             continue
@@ -66,22 +77,40 @@ def parse_legacy(sent: Any, failed: Any, settings: Settings) -> Migration:
             result.skipped += 1
             continue
         for commit in commits:
-            if not isinstance(commit, dict) or not isinstance(commit.get("sha"), str) or not re.fullmatch(r"[a-fA-F0-9]{7,64}", commit["sha"]):
+            if (
+                not isinstance(commit, dict)
+                or not isinstance(commit.get("sha"), str)
+                or not re.fullmatch(r"[a-fA-F0-9]{7,64}", commit["sha"])
+            ):
                 result.skipped += 1
                 continue
             sha = commit["sha"].lower()
             alias = f"{repo.casefold()}@{sha}"
             message = str(commit.get("message") or "历史提交")[:1800]
             # URL 从已校验的 repo/sha 重建，忽略旧文件中的任意链接与群目标。
-            result.failed.append(Event(
-                key=f"legacy-retry:{alias}", repo=repo, kind="legacy", title=message.splitlines()[0][:200],
-                body=f"旧监控失败通知重试\n{message}\n提交：{sha[:12]}",
-                url=f"https://github.com/{repo}/commit/{sha}", occurred_at=str(commit.get("date") or entry.get("created_at") or "")[:100],
-                legacy_keys=(alias,),
-            ))
+            result.failed.append(
+                Event(
+                    key=f"legacy-retry:{alias}",
+                    repo=repo,
+                    kind="legacy",
+                    title=message.splitlines()[0][:200],
+                    body=f"旧监控失败通知重试\n{message}\n提交：{sha[:12]}",
+                    url=f"https://github.com/{repo}/commit/{sha}",
+                    occurred_at=str(
+                        commit.get("date") or entry.get("created_at") or ""
+                    )[:100],
+                    legacy_keys=(alias,),
+                )
+            )
     if ignored_targets:
-        result.warnings.append(f"跳过 {ignored_targets} 条不属于当前管理员私聊的失败通知；群聊目标不会导入。")
+        result.warnings.append(
+            f"跳过 {ignored_targets} 条不属于当前管理员私聊的失败通知；群聊目标不会导入。"
+        )
     if result.failed:
-        result.warnings.append("旧插件可能同时记录已发送与部分目标失败，因此管理员私聊失败项优先保留；启用监控后按每轮上限重试。")
-    result.warnings.append("支持 Shell 旧监控的已发送/失败文件；旧 Issue 快照无需导入，新插件首次检查将静音建立基线。")
+        result.warnings.append(
+            "旧插件可能同时记录已发送与部分目标失败，因此管理员私聊失败项优先保留；启用监控后按每轮上限重试。"
+        )
+    result.warnings.append(
+        "支持 Shell 旧监控的已发送/失败文件；旧 Issue 快照无需导入，新插件首次检查将静音建立基线。"
+    )
     return result

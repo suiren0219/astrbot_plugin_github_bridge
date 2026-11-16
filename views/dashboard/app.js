@@ -6,7 +6,6 @@
   const root = document.documentElement;
   const state = {
     authenticated: false,
-    csrf: '',
     page: 'overview',
     eventStatus: 'all',
     repoFilter: 'all',
@@ -31,7 +30,6 @@
     repositoriesLoading: false,
     eventsLoading: false,
     settingsLoading: false,
-    sessionEpoch: 0,
     importGeneration: 0,
     importFiles: { sent: null, failed: null },
     theme: 'system',
@@ -150,7 +148,7 @@
 
   function redact(message) {
     let result = asString(message).replace(/(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]+/g, '[凭据已隐藏]');
-    for (const id of ['github-token', 'login-key']) {
+    for (const id of ['github-token']) {
       const value = document.getElementById(id)?.value;
       if (value && value.length > 3) result = result.split(value).join('[凭据已隐藏]');
     }
@@ -229,65 +227,22 @@
     return fallback;
   }
 
-  const pluginBridge = window.AstrBotPluginView || window.AstrBotPluginPage || null;
-  const previewMode = !pluginBridge;
+  const pluginBridge = window.AstrBotPluginView || window.AstrBotPluginPage;
 
   async function apiRequest(path, options = {}) {
-    const method = (options.method || 'GET').toUpperCase();
-    const epoch = state.sessionEpoch;
+    if (!pluginBridge) throw new ApiError('请从 AstrBot Dashboard 的插件视图打开此页面');
     const endpoint = path.replace(/^\/api\//, '');
+    const [route, query = ''] = endpoint.split('?');
+    const params = Object.fromEntries(new URLSearchParams(query));
     try {
-      let data;
-      if (pluginBridge && typeof (method === 'GET' ? pluginBridge.apiGet : pluginBridge.apiPost) === 'function') {
-        const paramsIndex = endpoint.indexOf('?');
-        const route = paramsIndex < 0 ? endpoint : endpoint.slice(0, paramsIndex);
-        const params = {};
-        if (paramsIndex >= 0) new URLSearchParams(endpoint.slice(paramsIndex + 1)).forEach((value, key) => { params[key] = value; });
-        data = method === 'GET' ? await pluginBridge.apiGet(route, params) : await pluginBridge.apiPost(route, options.body === undefined ? {} : options.body);
-      } else {
-        const controller = new AbortController();
-        const timeout = window.setTimeout(() => controller.abort(), endpoint === 'check' ? 120000 : 35000);
-        const headers = new Headers({ Accept: 'application/json' });
-        const init = { method, credentials: 'same-origin', cache: 'no-store', headers, signal: controller.signal };
-        if (method !== 'GET') {
-          headers.set('Content-Type', 'application/json');
-          headers.set('X-CSRF-Token', state.csrf || '');
-          init.body = JSON.stringify(options.body === undefined ? {} : options.body);
-        }
-        try {
-          const response = await fetch(path, init);
-          if (response.status === 401 && path !== '/api/login') {
-            handleUnauthorized();
-            throw new ApiError('登录会话已过期，请重新登录。', 401);
-          }
-          try {
-            data = await response.json();
-          } catch (_error) {
-            throw new ApiError(`服务返回了无效 JSON（HTTP ${response.status}）`, response.status);
-          }
-          if (!response.ok || data?.ok === false) {
-            throw new ApiError(redact(readErrorMessage(data, `请求失败（${response.status}）`)), response.status, data);
-          }
-        } catch (error) {
-          if (error instanceof ApiError) throw error;
-          if (error.name === 'AbortError') throw new ApiError('请求超时，请刷新查看结果后再操作。');
-          throw new ApiError('无法连接服务，请检查网络后重试。');
-        } finally {
-          window.clearTimeout(timeout);
-        }
-      }
-      if (epoch !== state.sessionEpoch) throw new ApiError('会话已变更', 401);
-      if (!data || typeof data !== 'object' || Array.isArray(data)) {
-        throw new ApiError('服务返回的数据格式不正确');
-      }
-      if (data.ok === false || data.status === 'error') {
-        throw new ApiError(redact(readErrorMessage(data, '请求失败')), 400, data);
-      }
-      if (typeof data.csrf === 'string') state.csrf = data.csrf;
+      const data = options.method === 'POST'
+        ? await pluginBridge.apiPost(route, options.body || {})
+        : await pluginBridge.apiGet(route, params);
+      if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('服务返回的数据格式不正确');
+      if (data.ok === false || data.status === 'error' || data.error) throw new Error(readErrorMessage(data, '请求失败'));
       return data;
     } catch (error) {
-      if (error instanceof ApiError) throw error;
-      throw new ApiError(redact(error?.message || '无法连接服务，请检查网络后重试。'));
+      throw new ApiError(redact(error?.message || 'Dashboard 请求失败'));
     }
   }
 
@@ -415,7 +370,10 @@
     root.dataset.theme = next;
     let resolved = next;
     if (next === 'system') {
-      resolved = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      const hostDark = pluginBridge?.getContext?.()?.isDark;
+      resolved = typeof hostDark === 'boolean'
+        ? (hostDark ? 'dark' : 'light')
+        : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     }
     root.dataset.resolvedTheme = resolved;
     if (persist) {
@@ -478,64 +436,15 @@
     if (banner) banner.hidden = true;
   }
 
-  function handleUnauthorized(message = '登录会话已过期，请重新登录。') {
-    if (pluginBridge) {
-      showGlobalError('Dashboard 登录会话已过期，请重新登录 AstrBot Dashboard 后刷新插件视图。');
-      return;
-    }
-    state.sessionEpoch += 1;
+  function handleUnauthorized() {
     state.authenticated = false;
-    state.settingsDirty = false;
-    state.settingsLoaded = false;
-    state.repositories = [];
-    state.events = [];
-    state.repositoriesLoaded = false;
-    state.eventsLoaded = false;
-    state.repositoriesError = null;
-    state.eventsError = null;
-    state.repositoriesLoading = false;
-    state.eventsLoading = false;
-    state.csrf = '';
-    $('#app-shell').hidden = true;
-    $('#boot-screen').hidden = true;
-    $('#login-screen').hidden = false;
-    const error = $('#login-error');
-    text(error, message);
-    if (error) error.hidden = false;
-    const retry = $('#session-retry');
-    if (retry) retry.hidden = false;
-    setConnection('offline', '会话已过期');
-    const input = $('#login-key');
-    if (input) input.focus();
-    announce(message);
-  }
-
-  function showLogin(message = '', connectionError = false) {
-    state.sessionEpoch += 1;
-    state.authenticated = false;
-    state.settingsDirty = false;
-    state.settingsLoaded = false;
-    $('#boot-screen').hidden = true;
-    $('#app-shell').hidden = true;
-    $('#login-screen').hidden = false;
-    const error = $('#login-error');
-    text(error, message);
-    if (error) error.hidden = !message;
-    const retry = $('#session-retry');
-    if (retry) retry.hidden = !connectionError;
-    const input = $('#login-key');
-    if (input) input.focus();
+    showGlobalError('Dashboard 登录会话已过期，请重新登录后刷新插件视图。');
   }
 
   function showApp() {
     state.authenticated = true;
     $('#boot-screen').hidden = true;
-    $('#login-screen').hidden = true;
     $('#app-shell').hidden = false;
-    const retry = $('#session-retry');
-    if (retry) retry.hidden = true;
-    const loginError = $('#login-error');
-    if (loginError) loginError.hidden = true;
   }
 
   function updatePageHeading(page) {
@@ -568,7 +477,10 @@
     const suffix = safePage === 'events' && EVENT_STATUSES.includes(status) && status !== 'all' ? `?status=${encodeURIComponent(status)}` : '';
     const next = `#${safePage}${suffix}`;
     if (window.location.hash !== next) window.location.hash = next;
-    else activatePage(safePage);
+    else {
+      activatePage(safePage);
+      if (safePage === 'events') loadEvents(status);
+    }
   }
 
   function activatePage(page) {
@@ -669,7 +581,7 @@
     text($('#route-target'), current.target_umo || (state.settings && state.settings.target_umo) || '—');
     setDot($('#route-source-dot'), lastError ? 'error' : ready ? 'active' : 'pending');
     if (state.settings && !state.settingPending) state.settings.enabled = enabled;
-    const switchesDisabled = !state.settingsLoaded || state.settingPending || state.settingsSaving || !state.csrf;
+    const switchesDisabled = !state.settingsLoaded || state.settingPending || state.settingsSaving || !state.authenticated;
     setSwitch($('[data-setting-toggle="enabled"].hero-switch'), enabled, switchesDisabled);
     setSwitch($('[data-setting-toggle="enabled"]:not(.hero-switch)'), enabled, switchesDisabled);
     $('#route-source-dot').setAttribute('aria-label', lastError ? '连接异常' : ready ? '已配置连接' : '等待配置');
@@ -696,7 +608,7 @@
     $('#setup-guide').hidden = !setupNeeded;
     const checkButton = $('#page-check');
     if (checkButton && !checkButton.classList.contains('is-busy')) {
-      checkButton.disabled = !ready || running || !state.csrf;
+      checkButton.disabled = !ready || running || !state.authenticated;
       checkButton.title = !ready ? '请先在设置中完成连接' : running ? '检查正在进行中' : '立即执行一次检查';
     }
     text($('#settings-version'), current.version ? `VERSION ${asString(current.version)}` : 'VERSION —');
@@ -1045,7 +957,7 @@
   }
 
   function setSettingsActionState() {
-    const ready = state.authenticated && state.settingsLoaded && !state.settingsError && Boolean(state.csrf);
+    const ready = state.authenticated && state.settingsLoaded && !state.settingsError;
     const pending = state.settingsSaving || state.settingPending || state.settingsLoading;
     $('#save-settings').disabled = !ready || !state.settingsDirty || pending;
     $('#discard-settings').disabled = !ready || !state.settingsDirty || pending;
@@ -1240,8 +1152,8 @@
     }
   }
 
-  async function loadEvents(status = state.eventStatus, force = false) {
-    if (!state.authenticated || state.eventsLoading) return null;
+  async function loadEvents(status = state.eventStatus) {
+    if (!state.authenticated) return null;
     const validStatus = EVENT_STATUSES.includes(status) ? status : 'all';
     state.eventStatus = validStatus;
     const requestId = ++state.eventRequestId;
@@ -1266,7 +1178,7 @@
       renderEvents();
       return null;
     } finally {
-      state.eventsLoading = false;
+      if (requestId === state.eventRequestId) state.eventsLoading = false;
     }
   }
 
@@ -1330,6 +1242,33 @@
     }
   }
 
+  let checkTimer = null;
+  let viewClosed = false;
+
+  function waitForCheck(previousCheck, attempts = 0) {
+    window.clearTimeout(checkTimer);
+    if (viewClosed || !state.authenticated) return;
+    checkTimer = window.setTimeout(async () => {
+      try {
+        const status = await loadStatusOnly();
+        if (!status.running && status.last_check !== previousCheck) {
+          await Promise.allSettled([loadRepositories(), loadEvents(state.eventStatus)]);
+          announce('检查已结束，仓库和推送记录已更新');
+          return;
+        }
+        if (attempts < 120) waitForCheck(previousCheck, attempts + 1);
+        else announce('检查仍未完成，可稍后手动刷新查看');
+      } catch (_) {
+        if (attempts < 3) waitForCheck(previousCheck, attempts + 1);
+      }
+    }, 2000);
+  }
+
+  window.addEventListener('pagehide', () => {
+    viewClosed = true;
+    window.clearTimeout(checkTimer);
+  });
+
   async function runCheck() {
     const button = $('#page-check');
     if (button.disabled || button.classList.contains('is-busy')) return;
@@ -1337,9 +1276,10 @@
     setConnection('loading', '检查中');
     try {
       const result = await apiPost('/api/check', {});
-      toast(asString(result.message, '检查已完成'));
-      announce(asString(result.message, '检查已完成'));
-      await refreshAll();
+      toast(asString(result.message, '检查已排队'));
+      announce(asString(result.message, '检查已排队'));
+      await loadStatusOnly();
+      waitForCheck(result.last_check);
     } catch (error) {
       if (error.status === 401) {
         handleUnauthorized();
@@ -1350,7 +1290,7 @@
       toast(message, 'error');
     } finally {
       setBusy(button, false, '立即检查');
-      if (state.status) button.disabled = false;
+      if (state.status) applyStatus(state.status);
     }
   }
 
@@ -1394,31 +1334,6 @@
       toast(message, 'error');
     } finally {
       setBusy(button, false, '测试已保存的连接');
-    }
-  }
-
-  async function logout() {
-    if (pluginBridge) {
-      toast('请从 AstrBot Dashboard 退出登录', 'error');
-      return;
-    }
-    const button = $('#logout');
-    if (button.disabled) return;
-    button.disabled = true;
-    try {
-      await apiPost('/api/logout', {});
-      showLogin('');
-      const input = $('#login-key');
-      if (input) input.value = '';
-      toast('已安全退出');
-    } catch (error) {
-      if (error.status === 401) {
-        showLogin('');
-        return;
-      }
-      toast(readErrorMessage(error.data, error.message || '退出登录失败'), 'error');
-    } finally {
-      button.disabled = false;
     }
   }
 
@@ -1591,59 +1506,16 @@
     }
   }
 
-  async function submitLogin(event) {
-    event.preventDefault();
-    const form = $('#login-form');
-    const input = $('#login-key');
-    const key = input.value;
-    if (!key) {
-      form.reportValidity();
-      return;
-    }
-    const submit = $('.login-submit', form);
-    setBusy(submit, true, '连接中');
-    const error = $('#login-error');
-    error.hidden = true;
-    text(error, '');
-    try {
-      const result = await apiPost('/api/login', { key });
-      if (result.ok !== true) throw new ApiError('登录未被服务端接受', 401, result);
-      if (typeof result.csrf === 'string') state.csrf = result.csrf;
-      input.value = '';
-      showApp();
-      await refreshAll();
-    } catch (requestError) {
-      const message = requestError.status === 401 ? '面板口令不正确，请再试一次。' : readErrorMessage(requestError.data, requestError.message || '登录失败');
-      text(error, message);
-      error.hidden = false;
-      announce(message);
-    } finally {
-      setBusy(submit, false, '进入管理面板');
-    }
-  }
-
   async function checkSession() {
-    if (pluginBridge) {
-      try {
-        await pluginBridge.ready();
-      } catch (_) {
-        // Dashboard 未同步上下文时，API 仍可经 bridge 调用。
-      }
-      showApp();
-      await refreshAll();
-      return;
-    }
-    try {
-      const result = await apiGet('/api/session');
-      if (result.authenticated === true) {
-        showApp();
-        await refreshAll();
-      } else {
-        showLogin('');
-      }
-    } catch (error) {
-      showLogin(readErrorMessage(error.data, '暂时无法连接管理服务，请稍后重试。'), true);
-    }
+    if (!pluginBridge) throw new Error('请从 AstrBot Dashboard 的插件视图打开此页面');
+    await pluginBridge.ready();
+    const stopContext = pluginBridge.onContext?.(() => {
+      if (state.theme === 'system') applyTheme('system', false);
+    });
+    window.addEventListener('pagehide', () => stopContext?.(), { once: true });
+    applyTheme(state.theme, false);
+    showApp();
+    await refreshAll();
   }
 
   function bindNavigation() {
@@ -1651,12 +1523,13 @@
     const parsed = parseHash();
     state.eventStatus = parsed.status;
     if (!window.location.hash || !PAGES.includes(parsed.page)) {
-      window.history.replaceState(null, '', '#overview');
+      window.location.hash = 'overview';
     }
     activatePage(parsed.page);
     setFilterPressed('[data-status-filter]', 'data-status-filter', state.eventStatus);
     $$('.nav-item').forEach((item, index, items) => {
-      item.addEventListener('click', () => {
+      item.addEventListener('click', (event) => {
+        event.preventDefault();
         const page = item.getAttribute('aria-controls').replace('page-', '');
         navigate(page, page === 'events' ? state.eventStatus : 'all');
       });
@@ -1677,19 +1550,17 @@
   }
 
   function bindEvents() {
-    $('#login-form').addEventListener('submit', submitLogin);
-    $('#session-retry').addEventListener('click', checkSession);
-    $('#refresh-all').addEventListener('click', refreshAll);
-    $('#page-check').addEventListener('click', runCheck);
-    $('#retry-all').addEventListener('click', () => retryEvents());
-    $('#settings-form').addEventListener('submit', saveSettings);
-    $('#discard-settings').addEventListener('click', resetSettingsForm);
-    $('#test-connection').addEventListener('click', testConnection);
-    $('#logout').addEventListener('click', logout);
-    $('#close-import').addEventListener('click', closeImportDialog);
-    $('#import-form').addEventListener('submit', submitImport);
-    $('#import-sent').addEventListener('input', updateImportSubmit);
-    $('#import-failed').addEventListener('input', updateImportSubmit);
+    const on = (selector, event, handler) => $(selector)?.addEventListener(event, handler);
+    on('#refresh-all', 'click', refreshAll);
+    on('#page-check', 'click', runCheck);
+    on('#retry-all', 'click', () => retryEvents());
+    on('#settings-form', 'submit', saveSettings);
+    on('#discard-settings', 'click', resetSettingsForm);
+    on('#test-connection', 'click', testConnection);
+    on('#close-import', 'click', closeImportDialog);
+    on('#import-form', 'submit', submitImport);
+    on('#import-sent', 'input', updateImportSubmit);
+    on('#import-failed', 'input', updateImportSubmit);
     $$('[data-import-file]').forEach((input) => {
       input.addEventListener('change', () => readImportFile(input.dataset.importFile, input.files && input.files[0]));
     });
@@ -1715,9 +1586,7 @@
     $$('[data-status-filter]').forEach((button) => {
       button.addEventListener('click', () => {
         const status = button.dataset.statusFilter;
-        state.eventStatus = EVENT_STATUSES.includes(status) ? status : 'all';
-        navigate('events', state.eventStatus);
-        loadEvents(state.eventStatus);
+        navigate('events', EVENT_STATUSES.includes(status) ? status : 'all');
       });
     });
     $$('[data-repo-filter]').forEach((button) => {
@@ -1750,11 +1619,11 @@
       if (retry) retryEvents(retry.dataset.retryId);
       const eventLink = event.target.closest('a[data-event-filter]');
       if (eventLink) {
-        state.eventStatus = eventLink.dataset.eventFilter || 'all';
-        navigate('events', state.eventStatus);
+        event.preventDefault();
+        navigate('events', eventLink.dataset.eventFilter || 'all');
       }
     });
-    $('#import-dialog').addEventListener('click', (event) => {
+    on('#import-dialog', 'click', (event) => {
       if (event.target === $('#import-dialog')) closeImportDialog();
     });
     document.addEventListener('keydown', (event) => {
@@ -1769,19 +1638,15 @@
   }
 
   async function init() {
-    if (pluginBridge) {
-      const logoutButton = $('#logout');
-      if (logoutButton) logoutButton.hidden = true;
-      const compact = logoutButton?.closest('.compact-settings');
-      if (compact && !compact.querySelector('[data-action="import"]')) compact.hidden = true;
-      const account = $('.account-avatar');
-      if (account) account.hidden = true;
-    }
     loadStoredTheme();
     bindNavigation();
     bindEvents();
     await checkSession();
   }
 
-  init();
+  init().catch(error => {
+    $('#boot-screen').hidden = true;
+    $('#app-shell').hidden = false;
+    showGlobalError(redact(error.message || '管理页初始化失败'));
+  });
 })();

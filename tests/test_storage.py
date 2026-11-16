@@ -21,33 +21,55 @@ class StorageTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def event(self, key="commit:abc", **kw):
-        return Event(key, "owner/demo", "commit", "提交", "详情", "https://github.com/owner/demo", "2026-11-16T00:00:00Z", **kw)
+        return Event(
+            key,
+            "owner/demo",
+            "commit",
+            "提交",
+            "详情",
+            "https://github.com/owner/demo",
+            "2026-11-16T00:00:00Z",
+            **kw,
+        )
 
     def test_baseline_snapshot_and_dedup_persist_after_restart(self):
         self.store.record("owner", self.target, self.repo, Observation({"head": "old"}))
         self.assertEqual(self.store.queue("owner", self.target, 5), [])
         observation = Observation({"head": "new"}, [self.event()])
-        self.assertEqual(self.store.record("owner", self.target, self.repo, observation), 1)
+        self.assertEqual(
+            self.store.record("owner", self.target, self.repo, observation), 1
+        )
         self.store.close()
         self.store = Store(self.path)
-        self.assertEqual(self.store.record("owner", self.target, self.repo, observation), 0)
+        self.assertEqual(
+            self.store.record("owner", self.target, self.repo, observation), 0
+        )
         self.assertEqual(self.store.snapshot("owner", 1)["head"], "new")
         self.assertEqual(len(self.store.queue("owner", self.target, 5)), 1)
 
     def test_outbox_and_snapshot_are_atomic(self):
         self.store.record("owner", self.target, self.repo, Observation({"head": "old"}))
         with self.assertRaises(TypeError):
-            self.store.record("owner", self.target, self.repo, Observation({"invalid": object()}, [self.event()]))
+            self.store.record(
+                "owner",
+                self.target,
+                self.repo,
+                Observation({"invalid": object()}, [self.event()]),
+            )
         self.assertEqual(self.store.snapshot("owner", 1), {"head": "old"})
         self.assertEqual(self.store.queue("owner", self.target, 5), [])
 
     def test_only_current_target_and_owner_can_send(self):
-        self.store.record("owner", self.target, self.repo, Observation({}, [self.event()]))
+        self.store.record(
+            "owner", self.target, self.repo, Observation({}, [self.event()])
+        )
         self.assertEqual(self.store.queue("other", self.target, 5), [])
         self.assertEqual(self.store.queue("owner", "platform:FriendMessage:2", 5), [])
 
     def test_failure_backoff_manual_retry_and_interrupted_delivery(self):
-        self.store.record("owner", self.target, self.repo, Observation({}, [self.event()]))
+        self.store.record(
+            "owner", self.target, self.repo, Observation({}, [self.event()])
+        )
         event_id = self.store.queue("owner", self.target, 5)[0]["id"]
         self.store.mark_sending(event_id)
         self.store.mark_failed(event_id, "offline")
@@ -64,10 +86,20 @@ class StorageTests(unittest.TestCase):
     def test_legacy_alias_suppresses_future_duplicates(self):
         self.store.import_records("owner", self.target, ["owner/demo:abc"], [])
         event = self.event(legacy_keys=("owner/demo:abc",))
-        self.assertEqual(self.store.record("owner", self.target, self.repo, Observation({}, [event])), 0)
+        self.assertEqual(
+            self.store.record(
+                "owner", self.target, self.repo, Observation({}, [event])
+            ),
+            0,
+        )
 
     def test_reset_baseline_keeps_outbox_and_is_owner_scoped(self):
-        self.store.record("owner", self.target, self.repo, Observation({"head": "old"}, [self.event()]))
+        self.store.record(
+            "owner",
+            self.target,
+            self.repo,
+            Observation({"head": "old"}, [self.event()]),
+        )
         self.assertFalse(self.store.reset_snapshot("other", "owner/demo"))
         self.assertTrue(self.store.reset_snapshot("owner", "owner/demo"))
         self.assertIsNone(self.store.snapshot("owner", 1))
@@ -106,17 +138,15 @@ class SettingsTests(unittest.TestCase):
         self.assertFalse(settings.allows_issue("evil/gdust-v2"))
         self.assertFalse(settings.allows_issue("suiren0219/GKDX"))
 
-    def test_token_is_write_only_and_panel_key_is_hashed(self):
+    def test_token_is_write_only_and_enable_requires_explicit_private_target(self):
         with tempfile.TemporaryDirectory() as temp:
             store = SettingsStore(Path(temp))
             store.update({"github_token": "sample-secret"})
-            store.update({"github_token": "", "enabled": True})
-            self.assertEqual(store.value.github_token, "sample-secret")
+            self.assertEqual(store.value.target_umo, "")
             self.assertNotIn("sample-secret", str(store.value.public()))
-            store.set_panel_key("a-long-panel-password")
-            self.assertNotIn("a-long-panel-password", store.auth_path.read_text())
-            self.assertTrue(store.verify_panel_key("a-long-panel-password"))
-            self.assertFalse(store.verify_panel_key("incorrect"))
+            with self.assertRaises(ValueError):
+                store.update({"enabled": True})
+            store.update({"target_umo": "platform:FriendMessage:123", "enabled": True})
+            self.assertEqual(store.value.target_umo, "platform:FriendMessage:123")
             with self.assertRaises(ValueError):
                 store.update({"clear_token": True})
-            self.assertTrue(store.value.enabled)

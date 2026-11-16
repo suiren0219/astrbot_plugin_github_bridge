@@ -4,7 +4,6 @@ import json
 import os
 import sqlite3
 import time
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -46,12 +45,17 @@ class Store:
         self.db.close()
 
     def meta(self, key: str, default: Any = None) -> Any:
-        row = self.db.execute("SELECT value FROM metadata WHERE key=?", (key,)).fetchone()
+        row = self.db.execute(
+            "SELECT value FROM metadata WHERE key=?", (key,)
+        ).fetchone()
         return json.loads(row[0]) if row else default
 
     def set_meta(self, key: str, value: Any) -> None:
         with self.db:
-            self.db.execute("INSERT OR REPLACE INTO metadata VALUES(?,?)", (key, json.dumps(value, ensure_ascii=False)))
+            self.db.execute(
+                "INSERT OR REPLACE INTO metadata VALUES(?,?)",
+                (key, json.dumps(value, ensure_ascii=False)),
+            )
 
     def acquire(self, holder: str, ttl: int = 180) -> bool:
         now = time.time()
@@ -65,7 +69,9 @@ class Store:
 
     def release(self, holder: str) -> None:
         with self.db:
-            self.db.execute("DELETE FROM leases WHERE name='poll' AND holder=?", (holder,))
+            self.db.execute(
+                "DELETE FROM leases WHERE name='poll' AND holder=?", (holder,)
+            )
 
     def recover_interrupted(self) -> int:
         # 上次在发送与记账之间退出时，无法确认 QQ 是否收到；由管理员手动处理，避免自动重复发。
@@ -79,81 +85,174 @@ class Store:
         with self.db:
             self.db.execute("UPDATE repositories SET active=0 WHERE owner=?", (owner,))
             for repo in repos:
-                self.db.execute("""
+                self.db.execute(
+                    """
                     INSERT INTO repositories(owner,id,full_name,payload) VALUES(?,?,?,?)
                     ON CONFLICT(owner,id) DO UPDATE SET full_name=excluded.full_name,
                     payload=excluded.payload,active=1
-                """, (owner, str(repo["id"]), repo["full_name"], json.dumps(repo, ensure_ascii=False)))
+                """,
+                    (
+                        owner,
+                        str(repo["id"]),
+                        repo["full_name"],
+                        json.dumps(repo, ensure_ascii=False),
+                    ),
+                )
 
     def snapshot(self, owner: str, repo_id: Any) -> dict[str, Any] | None:
-        row = self.db.execute("SELECT snapshot FROM repositories WHERE owner=? AND id=?", (owner, str(repo_id))).fetchone()
+        row = self.db.execute(
+            "SELECT snapshot FROM repositories WHERE owner=? AND id=?",
+            (owner, str(repo_id)),
+        ).fetchone()
         return json.loads(row[0]) if row and row[0] else None
 
-    def _enqueue(self, owner: str, target: str, event: Event, status: str = "pending", ignore_legacy: bool = False) -> bool:
+    def _enqueue(
+        self,
+        owner: str,
+        target: str,
+        event: Event,
+        status: str = "pending",
+        ignore_legacy: bool = False,
+    ) -> bool:
         keys = (event.key, *event.legacy_keys)
-        if not ignore_legacy and any(self.db.execute("SELECT 1 FROM legacy_seen WHERE event_key=?", (key,)).fetchone() for key in keys):
+        if not ignore_legacy and any(
+            self.db.execute(
+                "SELECT 1 FROM legacy_seen WHERE event_key=?", (key,)
+            ).fetchone()
+            for key in keys
+        ):
             return False
-        row = self.db.execute("""
+        row = self.db.execute(
+            """
             INSERT OR IGNORE INTO events(event_key,owner,repo,kind,title,body,url,occurred_at,target,status,created_at)
             VALUES(?,?,?,?,?,?,?,?,?,?,?)
-        """, (event.key, owner, event.repo, event.kind, event.title, event.body, event.url,
-              event.occurred_at, target, status, time.time()))
+        """,
+            (
+                event.key,
+                owner,
+                event.repo,
+                event.kind,
+                event.title,
+                event.body,
+                event.url,
+                event.occurred_at,
+                target,
+                status,
+                time.time(),
+            ),
+        )
         if row.rowcount:
             for alias in event.legacy_keys:
                 self.db.execute("INSERT OR IGNORE INTO legacy_seen VALUES(?)", (alias,))
         return bool(row.rowcount)
 
-    def record(self, owner: str, target: str, repo: dict[str, Any], observation: Observation) -> int:
+    def record(
+        self, owner: str, target: str, repo: dict[str, Any], observation: Observation
+    ) -> int:
         count = 0
         with self.db:
             for event in observation.events:
                 count += self._enqueue(owner, target, event)
-            self.db.execute("""
+            self.db.execute(
+                """
                 UPDATE repositories SET snapshot=?,last_check=?,error='' WHERE owner=? AND id=?
-            """, (json.dumps(observation.snapshot, ensure_ascii=False), time.time(), owner, str(repo["id"])))
+            """,
+                (
+                    json.dumps(observation.snapshot, ensure_ascii=False),
+                    time.time(),
+                    owner,
+                    str(repo["id"]),
+                ),
+            )
         return count
 
     def reset_snapshot(self, owner: str, full_name: str) -> bool:
         with self.db:
-            return bool(self.db.execute(
-                "UPDATE repositories SET snapshot=NULL,error='' WHERE owner=? AND full_name=? COLLATE NOCASE",
-                (owner, full_name),
-            ).rowcount)
+            return bool(
+                self.db.execute(
+                    "UPDATE repositories SET snapshot=NULL,error='' WHERE owner=? AND full_name=? COLLATE NOCASE",
+                    (owner, full_name),
+                ).rowcount
+            )
 
     def record_error(self, owner: str, repo_id: Any, error: str) -> None:
         with self.db:
-            self.db.execute("UPDATE repositories SET error=? WHERE owner=? AND id=?", (error[:500], owner, str(repo_id)))
+            self.db.execute(
+                "UPDATE repositories SET error=? WHERE owner=? AND id=?",
+                (error[:500], owner, str(repo_id)),
+            )
 
     def repositories(self, owner: str) -> list[dict[str, Any]]:
         result = []
-        for row in self.db.execute("SELECT * FROM repositories WHERE owner=? AND active=1 ORDER BY full_name COLLATE NOCASE", (owner,)):
+        for row in self.db.execute(
+            "SELECT * FROM repositories WHERE owner=? AND active=1 ORDER BY full_name COLLATE NOCASE",
+            (owner,),
+        ):
             repo = json.loads(row["payload"])
-            keys = ("id", "full_name", "description", "private", "archived", "default_branch", "stargazers_count",
-                    "forks_count", "open_issues_count", "html_url")
-            result.append({**{key: repo.get(key) for key in keys}, "last_check": row["last_check"], "error": row["error"]})
+            keys = (
+                "id",
+                "full_name",
+                "description",
+                "private",
+                "archived",
+                "default_branch",
+                "stargazers_count",
+                "forks_count",
+                "open_issues_count",
+                "html_url",
+            )
+            result.append(
+                {
+                    **{key: repo.get(key) for key in keys},
+                    "last_check": row["last_check"],
+                    "error": row["error"],
+                }
+            )
         return result
 
     def queue(self, owner: str, target: str, limit: int) -> list[dict[str, Any]]:
-        return [dict(row) for row in self.db.execute("""
+        return [
+            dict(row)
+            for row in self.db.execute(
+                """
             SELECT * FROM events WHERE owner=? AND target=? AND status IN ('pending','failed')
             AND manual_retry=0 AND next_attempt<=? ORDER BY id LIMIT ?
-        """, (owner, target, time.time(), limit))]
+        """,
+                (owner, target, time.time(), limit),
+            )
+        ]
 
     def mark_sending(self, event_id: int) -> None:
         with self.db:
-            self.db.execute("UPDATE events SET status='sending',attempts=attempts+1 WHERE id=?", (event_id,))
+            self.db.execute(
+                "UPDATE events SET status='sending',attempts=attempts+1 WHERE id=?",
+                (event_id,),
+            )
 
     def mark_sent(self, event_id: int) -> None:
         with self.db:
-            self.db.execute("UPDATE events SET status='sent',sent_at=?,last_error='' WHERE id=?", (time.time(), event_id))
+            self.db.execute(
+                "UPDATE events SET status='sent',sent_at=?,last_error='' WHERE id=?",
+                (time.time(), event_id),
+            )
 
     def mark_failed(self, event_id: int, error: str) -> None:
         with self.db:
-            row = self.db.execute("SELECT attempts FROM events WHERE id=?", (event_id,)).fetchone()
+            row = self.db.execute(
+                "SELECT attempts FROM events WHERE id=?", (event_id,)
+            ).fetchone()
             attempts = row[0] if row else 1
-            self.db.execute("""
+            self.db.execute(
+                """
                 UPDATE events SET status='failed',last_error=?,next_attempt=?,manual_retry=? WHERE id=?
-            """, (error[:500], time.time() + min(3600, 30 * 2 ** min(attempts, 7)), int(attempts >= 8), event_id))
+            """,
+                (
+                    error[:500],
+                    time.time() + min(3600, 30 * 2 ** min(attempts, 7)),
+                    int(attempts >= 8),
+                    event_id,
+                ),
+            )
 
     def retry(self, owner: str, target: str, event_id: int | None = None) -> int:
         sql = "UPDATE events SET status='pending',manual_retry=0,next_attempt=0,attempts=0 WHERE owner=? AND target=? AND status='failed'"
@@ -164,7 +263,9 @@ class Store:
         with self.db:
             return self.db.execute(sql, params).rowcount
 
-    def events(self, owner: str, status: str = "all", limit: int = 50) -> list[dict[str, Any]]:
+    def events(
+        self, owner: str, status: str = "all", limit: int = 50
+    ) -> list[dict[str, Any]]:
         sql = "SELECT * FROM events WHERE owner=?"
         params: list[Any] = [owner]
         if status != "all":
@@ -181,17 +282,29 @@ class Store:
         return result
 
     def counts(self, owner: str) -> dict[str, int]:
-        counts = {"repositories": len(self.repositories(owner)), "pending": 0, "sent": 0, "failed": 0}
-        for row in self.db.execute("SELECT status,COUNT(*) AS n FROM events WHERE owner=? GROUP BY status", (owner,)):
+        counts = {
+            "repositories": len(self.repositories(owner)),
+            "pending": 0,
+            "sent": 0,
+            "failed": 0,
+        }
+        for row in self.db.execute(
+            "SELECT status,COUNT(*) AS n FROM events WHERE owner=? GROUP BY status",
+            (owner,),
+        ):
             key = "pending" if row["status"] == "sending" else row["status"]
             counts[key] = counts.get(key, 0) + row["n"]
         return counts
 
-    def import_records(self, owner: str, target: str, seen: list[str], failed: list[Event]) -> tuple[int, int]:
+    def import_records(
+        self, owner: str, target: str, seen: list[str], failed: list[Event]
+    ) -> tuple[int, int]:
         imported = queued = 0
         with self.db:
             for key in seen:
-                imported += self.db.execute("INSERT OR IGNORE INTO legacy_seen VALUES(?)", (key,)).rowcount
+                imported += self.db.execute(
+                    "INSERT OR IGNORE INTO legacy_seen VALUES(?)", (key,)
+                ).rowcount
             for event in failed:
                 queued += self._enqueue(owner, target, event, ignore_legacy=True)
         return imported, queued

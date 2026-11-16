@@ -17,12 +17,15 @@ Sender = Callable[[str, str], Awaitable[None]]
 
 
 class BridgeService:
-    def __init__(self, settings: SettingsStore, store: Store, sender: Sender, client_factory=None):
+    def __init__(
+        self, settings: SettingsStore, store: Store, sender: Sender, client_factory=None
+    ):
         self.settings = settings
         self.store = store
         self.sender = sender
         if client_factory is None:
             from .github import GitHubClient
+
             client_factory = GitHubClient
         self.client_factory = client_factory
         self.client = self.client_factory(settings.value)
@@ -44,7 +47,11 @@ class BridgeService:
         if token:
             value = value.replace(token, "[已隐藏]")
         value = re.sub(r"(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]+", "[已隐藏]", value)
-        value = re.sub(r"(?i)(authorization|bearer|token|password)[=: ]+[^\s,;]+", r"\1=[已隐藏]", value)
+        value = re.sub(
+            r"(?i)(authorization|bearer|token|password)[=: ]+[^\s,;]+",
+            r"\1=[已隐藏]",
+            value,
+        )
         return value[:400]
 
     async def start(self) -> None:
@@ -147,15 +154,21 @@ class BridgeService:
                     self._recovered = True
                 try:
                     if time.time() < self.cooldown_until:
-                        raise RuntimeError("GitHub 限流退避中，已暂停抓取；已落盘通知仍可投递")
+                        raise RuntimeError(
+                            "GitHub 限流退避中，已暂停抓取；已落盘通知仍可投递"
+                        )
                     repos = await self.client.list_repositories()
-                    repos = [repo for repo in repos if not cfg.excludes(repo["full_name"])]
+                    repos = [
+                        repo for repo in repos if not cfg.excludes(repo["full_name"])
+                    ]
                     self.store.discover(cfg.identity, repos)
                     for repo in repos:
                         try:
                             previous = self.store.snapshot(cfg.identity, repo["id"])
                             observation = await self.client.observe(repo, previous)
-                            queued += self.store.record(cfg.identity, cfg.target_umo, repo, observation)
+                            queued += self.store.record(
+                                cfg.identity, cfg.target_umo, repo, observation
+                            )
                         except Exception as exc:
                             error = self.safe_error(exc)
                             failures.append(f"{repo['full_name']}: {error}")
@@ -166,10 +179,15 @@ class BridgeService:
                     failures.append(self.safe_error(exc))
                     self._rate_error(exc)
                 # GitHub 暂时不可用也继续投递已落盘通知。
-                for event in self.store.queue(cfg.identity, cfg.target_umo, cfg.max_push_per_cycle):
+                for event in self.store.queue(
+                    cfg.identity, cfg.target_umo, cfg.max_push_per_cycle
+                ):
                     self.store.mark_sending(event["id"])
                     try:
-                        await asyncio.wait_for(self.sender(cfg.target_umo, self.format_event(event)), timeout=30)
+                        await asyncio.wait_for(
+                            self.sender(cfg.target_umo, self.format_event(event)),
+                            timeout=30,
+                        )
                         self.store.mark_sent(event["id"])
                         sent += 1
                     except Exception as exc:
@@ -179,7 +197,12 @@ class BridgeService:
                 self.last_check = time.time()
                 self.store.set_meta("last_check", self.last_check)
                 self.last_error = "；".join(failures[:3])
-                log.info("GitHub Bridge CHECK queued=%d sent=%d failures=%d", queued, sent, len(failures))
+                log.info(
+                    "GitHub Bridge CHECK queued=%d sent=%d failures=%d",
+                    queued,
+                    sent,
+                    len(failures),
+                )
                 return {"queued": queued, "sent": sent}
             finally:
                 heartbeat.cancel()
@@ -199,8 +222,15 @@ class BridgeService:
 
     @staticmethod
     def format_event(event: dict[str, Any]) -> str:
-        kinds = {"commit": "代码提交", "release": "新 Release", "issue": "Issue 动态", "issue-event": "Issue 动态",
-                 "comment": "Issue 评论", "metadata": "仓库变化", "legacy": "历史通知重试"}
+        kinds = {
+            "commit": "代码提交",
+            "release": "新 Release",
+            "issue": "Issue 动态",
+            "issue-event": "Issue 动态",
+            "comment": "Issue 评论",
+            "metadata": "仓库变化",
+            "legacy": "历史通知重试",
+        }
         label = kinds.get(event["kind"], event["kind"])
         body = event["body"][:1400]
         return f"[GitHub · {label}]\n{event['repo']}\n{event['title'][:200]}\n{body}\n{event['url']}".strip()
@@ -208,12 +238,21 @@ class BridgeService:
     def status(self) -> dict[str, Any]:
         cfg = self.settings.value
         return {
-            "version": __version__, "enabled": cfg.enabled, "ready": bool(cfg.github_token),
-            "running": self.running, "github_owner": cfg.github_owner, "target_umo": cfg.target_umo,
-            "poll_interval": cfg.poll_interval, "last_check": self.last_check, "next_check": self.next_check,
-            "last_error": self.last_error, "rate_limit": getattr(self.client, "rate_limit", {}),
-            "cooldown_until": self.cooldown_until, "counts": self.store.counts(cfg.identity),
-            "recent_events": self.store.events(cfg.identity, limit=5), "preview": False,
+            "version": __version__,
+            "enabled": cfg.enabled,
+            "ready": bool(cfg.github_token and cfg.target_umo),
+            "running": self.running,
+            "github_owner": cfg.github_owner,
+            "target_umo": cfg.target_umo,
+            "poll_interval": cfg.poll_interval,
+            "last_check": self.last_check,
+            "next_check": self.next_check,
+            "last_error": self.last_error,
+            "rate_limit": getattr(self.client, "rate_limit", {}),
+            "cooldown_until": self.cooldown_until,
+            "counts": self.store.counts(cfg.identity),
+            "recent_events": self.store.events(cfg.identity, limit=5),
+            "preview": False,
         }
 
     async def create_issue(self, repo: str, title: str, body: str) -> dict[str, Any]:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -9,8 +8,7 @@ from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
-
-DEFAULT_TARGET = "恩赫里亚:FriendMessage:1906986796"
+DEFAULT_TARGET = ""
 REPO_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
@@ -32,18 +30,33 @@ class Settings:
     max_pages: int = 20
 
     def validate(self) -> None:
-        if not isinstance(self.github_owner, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", self.github_owner):
+        if not isinstance(self.github_owner, str) or not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", self.github_owner
+        ):
             raise ValueError("GitHub 用户名格式不正确")
-        if not isinstance(self.target_umo, str) or not re.fullmatch(r"[^:\s]+:FriendMessage:[^:\s]+", self.target_umo):
-            raise ValueError("推送目标必须为 平台ID:FriendMessage:用户ID，只支持私聊")
+        if not isinstance(self.target_umo, str) or (
+            self.target_umo
+            and not re.fullmatch(r"[^:\s]+:FriendMessage:[^:\s]+", self.target_umo)
+        ):
+            raise ValueError(
+                "推送目标必须为空或为 平台ID:FriendMessage:用户ID，只支持私聊"
+            )
         for key, lo, hi in (
-            ("poll_interval", 60, 86400), ("max_push_per_cycle", 1, 20),
-            ("request_timeout", 5, 120), ("max_pages", 1, 100),
+            ("poll_interval", 60, 86400),
+            ("max_push_per_cycle", 1, 20),
+            ("request_timeout", 5, 120),
+            ("max_pages", 1, 100),
         ):
             value = getattr(self, key)
             if type(value) is not int or not lo <= value <= hi:
                 raise ValueError(f"{key} 必须为 {lo}–{hi} 之间的整数")
-        for key in ("enabled", "monitor_commits", "monitor_releases", "monitor_issues", "monitor_metadata"):
+        for key in (
+            "enabled",
+            "monitor_commits",
+            "monitor_releases",
+            "monitor_issues",
+            "monitor_metadata",
+        ):
             if type(getattr(self, key)) is not bool:
                 raise ValueError(f"{key} 必须为布尔值")
         for key in ("github_token", "issue_repositories", "excluded_repositories"):
@@ -52,6 +65,8 @@ class Settings:
                 raise ValueError(f"{key} 格式不正确或过长")
         if self.enabled and not self.github_token.strip():
             raise ValueError("启用监控前请保存 GitHub Token")
+        if self.enabled and not self.target_umo:
+            raise ValueError("启用监控前请先填写管理员私聊目标")
 
     @property
     def identity(self) -> str:
@@ -72,13 +87,24 @@ class Settings:
         for pattern in self.issue_repositories.split(","):
             pattern = pattern.strip().casefold()
             candidate = full_name.casefold() if "/" in pattern else name.casefold()
-            if pattern and (candidate == pattern or pattern.endswith("*") and candidate.startswith(pattern[:-1])):
+            if pattern and (
+                candidate == pattern
+                or pattern.endswith("*")
+                and candidate.startswith(pattern[:-1])
+            ):
                 return True
         return False
 
     def excludes(self, full_name: str) -> bool:
-        exclusions = {x.strip().casefold() for x in self.excluded_repositories.split(",") if x.strip()}
-        return full_name.casefold() in exclusions or full_name.split("/", 1)[-1].casefold() in exclusions
+        exclusions = {
+            x.strip().casefold()
+            for x in self.excluded_repositories.split(",")
+            if x.strip()
+        }
+        return (
+            full_name.casefold() in exclusions
+            or full_name.split("/", 1)[-1].casefold() in exclusions
+        )
 
 
 def secure_write(path: Path, content: str) -> None:
@@ -103,22 +129,20 @@ class SettingsStore:
         os.chmod(data_dir, 0o700)
         self.path = data_dir / "settings.json"
         valid_keys = {field.name for field in fields(Settings)}
-        data = {key: value for key, value in (initial or {}).items() if key in valid_keys}
+        data = {
+            key: value for key, value in (initial or {}).items() if key in valid_keys
+        }
         if self.path.exists():
             data.update(json.loads(self.path.read_text(encoding="utf-8")))
         # 环境变量适用于容器 secret，优先于落盘值。
         if os.environ.get("GITHUB_BRIDGE_TOKEN"):
             data["github_token"] = os.environ["GITHUB_BRIDGE_TOKEN"]
-        self.value = Settings(**{key: value for key, value in data.items() if key in valid_keys})
+        self.value = Settings(
+            **{key: value for key, value in data.items() if key in valid_keys}
+        )
         self.value.validate()
         if not self.path.exists():
             self._persist(self.value)
-        auth_path = data_dir / "panel.auth.json"
-        if auth_path.exists():
-            self.auth = json.loads(auth_path.read_text(encoding="utf-8"))
-        else:
-            self.auth: dict[str, Any] = {}
-        self.auth_path = auth_path
 
     def _persist(self, value: Settings) -> None:
         data = asdict(value)
@@ -145,17 +169,3 @@ class SettingsStore:
         self._persist(value)
         self.value = value
         return value
-
-    def set_panel_key(self, key: str) -> None:
-        if len(key) < 16 or len(key) > 512:
-            raise ValueError("面板口令长度必须为 16–512 位")
-        salt = secrets.token_hex(16)
-        digest = hashlib.scrypt(key.encode(), salt=bytes.fromhex(salt), n=16384, r=8, p=1).hex()
-        self.auth = {"salt": salt, "digest": digest}
-        secure_write(self.auth_path, json.dumps(self.auth) + "\n")
-
-    def verify_panel_key(self, key: str) -> bool:
-        if not self.auth or len(key) > 512:
-            return False
-        digest = hashlib.scrypt(key.encode(), salt=bytes.fromhex(self.auth["salt"]), n=16384, r=8, p=1).hex()
-        return secrets.compare_digest(digest, self.auth["digest"])

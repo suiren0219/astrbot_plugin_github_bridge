@@ -19,17 +19,31 @@ class FeedbackTests(unittest.TestCase):
                 drafts.pop(draft.code, "sender")
 
     def test_context_is_text_only_and_omits_sender_ids_and_media(self):
-        result = group_context({"messages": [{"sender": {"user_id": "private-identity"}, "message": [
-            {"type": "text", "data": {"text": "导入失败 token=private-token"}},
-            {"type": "image", "data": {"url": "https://private-image"}},
-        ]}]})
+        result = group_context(
+            {
+                "messages": [
+                    {
+                        "sender": {"user_id": "private-identity"},
+                        "message": [
+                            {
+                                "type": "text",
+                                "data": {"text": "导入失败 token=private-token"},
+                            },
+                            {"type": "image", "data": {"url": "https://private-image"}},
+                        ],
+                    }
+                ]
+            }
+        )
         self.assertIn("导入失败", result)
         self.assertNotIn("private-identity", result)
         self.assertNotIn("private-image", result)
         self.assertNotIn("private-token", result)
 
     def test_redacts_common_secrets_and_preserves_useful_text(self):
-        text = redact("重现步骤：导入\nAuthorization: Bearer ghp_abcdefghijklmnopqrstuvwxyz\n密码=abcdef")
+        text = redact(
+            "重现步骤：导入\nAuthorization: Bearer ghp_abcdefghijklmnopqrstuvwxyz\n密码=abcdef"
+        )
         self.assertIn("导入", text)
         self.assertNotIn("ghp_", text)
         self.assertNotIn("abcdef", text)

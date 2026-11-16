@@ -26,12 +26,12 @@
 
 1. 在 AstrBot 插件管理中上传本插件 ZIP，或将源码放入 `data/plugins/astrbot_plugin_github_bridge`，安装 `requirements.txt` 后重载。
 2. 确认自己的 QQ 已加入 AstrBot 管理员名单。
-3. 打开 **AstrBot Dashboard → 插件 → GitHub Bridge → 可视化视图 `dashboard`**。页面沿用 Dashboard 登录，无需额外端口、SSH 隧道、反向代理或独立口令。容器内也不再监听 `127.0.0.1:8765`。
-4. 在管理页填写 GitHub 用户名、Token、私聊目标，再保存。默认值来自需求：用户 `suiren0219`，目标 `恩赫里亚:FriendMessage:1906986796`。第一段必须是当前 AstrBot 平台实例 ID，并非适配器名称；如平台实际 ID 不同，请修改。
+3. 打开 **AstrBot Dashboard → 插件 → GitHub Bridge → 可视化视图 `dashboard`**。页面沿用 Dashboard 登录，无需额外端口、SSH 隧道、反向代理或独立口令。
+4. 在管理页填写自己的 GitHub 用户名、Token、管理员私聊目标，再保存。私聊目标默认留空，例如 `qq-bot:FriendMessage:123456`；第一段必须是当前 AstrBot 平台实例 ID，并非适配器名称。未配置目标时不能启用监控。已有安装的数据不会被默认值覆盖。
 5. 点击“测试连接”，确认账号与仓库可见范围；然后启用监控。默认每 120 秒检查一次，每轮最多发送 5 条，剩余通知保留在队列中。
 6. 首轮只建立基线。新仓库或重新启用的事件类型也会静音建基线。后续新增事件才推送；已明确导入的旧失败项会正常重试。
 
-Token 不预置；安装后监控默认暂停。`monitor_enabled` 插件配置可控制加载后是否自动启动轮询；监控参数在管理页保存，即时生效。检查进行中会拒绝同时改配置，请稍后重试。
+Token 不预置；首次安装监控默认暂停。`monitor_enabled=false` 会在每次插件加载时将持久监控状态设为暂停；当前运行期间仍可通过管理页或 `/gh resume` 手动开启。`monitor_enabled=true` 则保留管理页最后保存的启用状态。检查进行中会拒绝同时改配置，请稍后重试。
 
 ### GitHub Token
 
@@ -112,16 +112,22 @@ AstrBot/data/plugin_data/astrbot_plugin_github_bridge/
 
 ```bash
 python -m pip install -r requirements.txt
-python -m unittest discover -s tests -v
+python -m unittest discover -s tests -t . -v
+python -m ruff check .
+python -m ruff format --check .
 python tools/preview.py --port 8766
 ```
 
-打开 `http://127.0.0.1:8766`。本地预览使用 `web/` 下的独立页面副本和临时数据，显著标注演示，不连接 GitHub、不发 QQ、不发布 issue。预览服务只监听本机，关闭后演示数据丢弃。生产安装包不包含 `web/`、`tools/` 或 `tests/`。
+打开 `http://127.0.0.1:8766`。预览工具直接加载生产 `views/dashboard/`，放入与官方相同限制的 iframe，并模拟 `AstrBotPluginView` bridge；不再维护独立页面副本。页面标注演示，使用临时数据，不连接 GitHub、不发 QQ、不发布 issue。服务只监听本机，关闭后数据丢弃。生产安装包不包含 `tools/` 或 `tests/`。
 
 测试使用标准库 unittest 与 aiohttp test utilities，无需运行 AstrBot。插件入口测试按已核实的 AstrBot 4.29.4 API 模拟宿主；实际生产 QQ / GitHub 联调仍须在配置好凭据与平台的 AstrBot 实例完成。
 
-发布包生成：`python tools/package.py`。包中不包含 Token、数据库、测试临时目录或下载的需求文档。
+开发检查需要单独安装 `ruff`（不属于插件运行依赖）。可用 `python tools/preview.py --event-delay 12` 模拟通知响应乱序，验证快速筛选。
+
+发布包生成：`python tools/package.py`。包中不包含 Token、数据库、测试临时目录或下载的需求文档。完整规范对照、修复项和验证范围见 [Wiki 审查记录](docs/WIKI_REVIEW.md)。
 
 ## 许可
 
-AGPL-3.0-or-later，详见 LICENSE。界面按 KSU skill 提供的 SukiSU 风格参数重新实现，未复制上游 Compose / Miuix 源码。
+AGPL-3.0-or-later，详见 LICENSE。界面参考 [SukiSU-Ultra](https://github.com/SukiSU-Ultra/SukiSU-Ultra) 的状态卡、徽章和悬浮导航设计重新实现，未复制上游 Compose / Miuix 源码。旧监控迁移格式参考 [Shell GitHub 监控插件](https://github.com/1592363624/astrbot_plugin_github_monitor_shell) 的公开数据结构，未移植其实现代码。
+
+开发接口依据 [AstrBot 插件开发指南](https://docs.astrbot.app/dev/star/plugin-new.html)、[插件配置](https://docs.astrbot.app/dev/star/guides/plugin-config.html)、[插件可视化视图](https://docs.astrbot.app/dev/star/guides/plugin-pages.html) 和 [插件发布](https://docs.astrbot.app/dev/star/plugin-publish.html)，并用 `v4.29.4` 源码核对 API 签名。
