@@ -554,7 +554,7 @@
       statusKind = 'pending';
       label = '待配置';
       title = '等待配置完成';
-      description = '保存 Token 和私聊目标后，即可开始建立连接。';
+      description = '填写自己的 GitHub 用户名、Token 和私聊目标后，即可开始建立连接。';
     } else if (running) {
       statusKind = 'active';
       label = '检查中';
@@ -604,6 +604,9 @@
       $('#status-error').hidden = true;
     }
     $('#preview-banner').hidden = !preview;
+    const configurationWarning = asString(current.configuration_warning).trim();
+    text($('#configuration-warning-message'), configurationWarning);
+    $('#configuration-warning').hidden = !configurationWarning;
     const setupNeeded = !ready && !lastError;
     $('#setup-guide').hidden = !setupNeeded;
     const checkButton = $('#page-check');
@@ -947,8 +950,8 @@
   function updateEnabledDescription() {
     const description = $('#enabled-description');
     if (!description) return;
-    if (!state.settings || state.settings.token_configured !== true) {
-      text(description, '先保存 GitHub Token，再开启自动监控。');
+    if (!state.settings || state.settings.token_configured !== true || !state.settings.github_owner || !state.settings.target_umo) {
+      text(description, '先填写自己的 GitHub 用户名、Token 和私聊目标，再开启自动监控。');
     } else if (asBoolean(state.settings.enabled)) {
       text(description, '按设定间隔检查仓库，发现变化后推送。');
     } else {
@@ -1010,8 +1013,9 @@
   }
 
   function validatePatch(patch) {
-    if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(patch.github_owner)) return 'GitHub 用户名格式不正确。';
-    if (!/^[^:\s]+:FriendMessage:[^:\s]+$/.test(patch.target_umo)) return '私聊目标格式应为 平台ID:FriendMessage:用户ID。';
+    if (patch.github_owner && !/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(patch.github_owner)) return 'GitHub 用户名格式不正确。';
+    if (patch.target_umo && !/^[^:\s]+:FriendMessage:[^:\s]+$/.test(patch.target_umo)) return '私聊目标格式应为 平台ID:FriendMessage:用户ID。';
+    if (patch.enabled && (!patch.github_owner || !patch.target_umo)) return '启用监控前请填写自己的 GitHub 用户名和私聊目标。';
     const numericRules = [
       ['poll_interval', 60, 86400],
       ['max_push_per_cycle', 1, 20],

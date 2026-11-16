@@ -42,27 +42,12 @@ class DemoGitHub:
 
     def repos(self):
         definitions = [
-            ("gdust-v2", "让校园生活，轻一点。课表、教务与学习助手。", 42, 6),
-            (
-                "astrbot_plugin_schedule_lite",
-                "把课表放进聊天，让每一次出发都有准备。",
-                27,
-                3,
-            ),
-            (
-                "astrbot_plugin_ai_rights",
-                "为 AstrBot 提供更自然的消息交互体验。",
-                18,
-                2,
-            ),
-            (
-                "astrbot_plugin_github_bridge",
-                "QQ 与 GitHub 之间，一座安静工作的桥。",
-                5,
-                1,
-            ),
-            ("GKDX", "轻量、可控的 Android 自动跳过工具。", 38, 4),
-            ("astrbot_plugin_schedule_lite_web", "课表 Lite 的网页伴侣。", 9, 1),
+            ("demo-app", "示例应用，用于展示提交与 Issue 动态。", 42, 6),
+            ("demo-calendar", "示例日程工具，用于展示版本发布。", 27, 3),
+            ("demo-chat", "示例聊天工具。", 18, 2),
+            ("demo-bridge", "示例消息桥接服务。", 5, 1),
+            ("demo-tool", "示例开发工具。", 38, 4),
+            ("demo-web", "示例网页项目。", 9, 1),
         ]
         return [
             {
@@ -98,6 +83,8 @@ async def main(port: int, event_delay: float = 0):
         settings = SettingsStore(
             root,
             {
+                "github_owner": "demo-user",
+                "issue_repositories": "",
                 "github_token": "demo-placeholder-not-a-token",
                 "target_umo": "demo-bot:FriendMessage:123456",
                 "enabled": True,
@@ -116,14 +103,14 @@ async def main(port: int, event_delay: float = 0):
             (
                 0,
                 "commit",
-                "fix: 修复学习通课程导入",
-                "更新了课程识别与重试逻辑。",
+                "fix: 修复示例数据导入",
+                "更新了示例数据校验与重试逻辑。",
                 "commit/demo",
             ),
             (
                 1,
                 "release",
-                "课表 Lite v1.10.7",
+                "示例版本 v1.0.0",
                 "日程同步与卡片展示体验更新。",
                 "releases",
             ),

@@ -11,8 +11,8 @@ DATE = "2026-11-16T08:00:00Z"
 LATER = "2026-11-16T08:01:00Z"
 REPO = {
     "id": 1,
-    "full_name": "suiren0219/demo",
-    "owner": {"login": "suiren0219"},
+    "full_name": "test-owner/demo",
+    "owner": {"login": "test-owner"},
     "default_branch": "main",
     "description": "demo",
     "stargazers_count": 1,
@@ -32,7 +32,9 @@ def commit(sha, parents=None):
 
 class CollectorTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.client = GitHubClient(Settings(github_token="test-secret"))
+        self.client = GitHubClient(
+            Settings(github_owner="test-owner", github_token="test-secret")
+        )
         self.repo = copy.deepcopy(REPO)
         self.head = commit("a")
         self.issues = []
@@ -94,7 +96,7 @@ class CollectorTests(unittest.IsolatedAsyncioTestCase):
         result = await self.client.observe(self.repo, previous)
         events = [event for event in result.events if event.kind == "commit"]
         self.assertEqual(len(events), 2)
-        self.assertEqual(events[0].legacy_keys, ("suiren0219/demo@" + "b" * 40,))
+        self.assertEqual(events[0].legacy_keys, ("test-owner/demo@" + "b" * 40,))
         repeated = await self.client.observe(self.repo, result.snapshot)
         self.assertEqual(repeated.events, [])
         self.assertEqual(previous["sources"]["commits"]["head"], "a" * 40)
@@ -145,13 +147,13 @@ class CollectorTests(unittest.IsolatedAsyncioTestCase):
             {
                 "id": 40,
                 "created_at": LATER,
-                "issue_url": API + "/repos/suiren0219/demo/issues/2",
+                "issue_url": API + "/repos/test-owner/demo/issues/2",
                 "body": "详情",
             },
             {
                 "id": 41,
                 "created_at": LATER,
-                "issue_url": API + "/repos/suiren0219/demo/issues/3",
+                "issue_url": API + "/repos/test-owner/demo/issues/3",
                 "body": "PR",
             },
         ]
@@ -178,7 +180,7 @@ class CollectorTests(unittest.IsolatedAsyncioTestCase):
             {
                 "id": 41,
                 "created_at": LATER,
-                "issue_url": API + "/repos/suiren0219/demo/issues/1",
+                "issue_url": API + "/repos/test-owner/demo/issues/1",
                 "body": "new",
             }
         ]
@@ -272,25 +274,25 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
     async def test_owned_repository_discovery_filters_collaborators_and_reports_login(
         self,
     ):
-        client = GitHubClient(Settings(github_token="test"))
+        client = GitHubClient(Settings(github_owner="test-owner", github_token="test"))
         client._request = AsyncMock(
             side_effect=[
-                ({"login": "suiren0219"}, {}),
-                ({"login": "suiren0219", "type": "User"}, {}),
+                ({"login": "test-owner"}, {}),
+                ({"login": "test-owner", "type": "User"}, {}),
                 ([REPO, {**REPO, "id": 2, "owner": {"login": "thirdparty"}}], {}),
             ]
         )
         info = await client.test_connection()
-        self.assertEqual(info["login"], "suiren0219")
+        self.assertEqual(info["login"], "test-owner")
         self.assertEqual(info["repository_count"], 1)
         self.assertIn("affiliation=owner", client._request.call_args_list[-1].args[1])
 
     async def test_wrong_token_owner_is_rejected_before_repo_discovery(self):
-        client = GitHubClient(Settings(github_token="test"))
+        client = GitHubClient(Settings(github_owner="test-owner", github_token="test"))
         client._request = AsyncMock(
             side_effect=[
                 ({"login": "other"}, {}),
-                ({"login": "suiren0219", "type": "User"}, {}),
+                ({"login": "test-owner", "type": "User"}, {}),
             ]
         )
         with self.assertRaisesRegex(GitHubError, "不一致"):
@@ -314,7 +316,9 @@ class Response:
 
 class RequestTests(unittest.IsolatedAsyncioTestCase):
     async def test_rate_limit_retry_and_token_not_leaked(self):
-        client = GitHubClient(Settings(github_token="private-test-secret"))
+        client = GitHubClient(
+            Settings(github_owner="test-owner", github_token="private-test-secret")
+        )
         future = int(time.time()) + 180
 
         class Session:
@@ -341,7 +345,7 @@ class RequestTests(unittest.IsolatedAsyncioTestCase):
             await client._request("GET", "/user")
 
     async def test_external_origin_and_redirects_never_receive_followup(self):
-        client = GitHubClient(Settings(github_token="test"))
+        client = GitHubClient(Settings(github_owner="test-owner", github_token="test"))
         with self.assertRaises(GitHubError):
             await client._request("GET", "https://evil.example")
         self.assertIsNone(client._session)

@@ -5,6 +5,7 @@ __pycache__/
 .venv/
 *.sqlite3*
 settings.json
+settings.before-preset-cleanup.*.json
 panel.auth.json
 .local/
 dist/

@@ -10,12 +10,14 @@ from github_bridge.storage import Store
 
 class MigrationTests(unittest.TestCase):
     def setUp(self):
-        self.cfg = Settings(target_umo="platform:FriendMessage:123456")
+        self.cfg = Settings(
+            github_owner="test-owner", target_umo="platform:FriendMessage:123456"
+        )
         self.sha = "a" * 40
-        self.sent = {"suiren0219/gdust-v2/feature/test": {self.sha: [["123"]]}}
+        self.sent = {"test-owner/demo-app/feature/test": {self.sha: [["123"]]}}
         self.failed = [
             {
-                "repo_info": {"owner": {"login": "suiren0219"}, "name": "gdust-v2"},
+                "repo_info": {"owner": {"login": "test-owner"}, "name": "demo-app"},
                 "new_commits": [
                     {
                         "sha": self.sha,
@@ -32,7 +34,7 @@ class MigrationTests(unittest.TestCase):
     def test_legacy_keys_with_slash_branch_and_owner_filter(self):
         data = {**self.sent, "thirdparty/demo": {self.sha: [[]]}}
         result = parse_legacy(data, None, self.cfg)
-        self.assertEqual(result.seen, [f"suiren0219/gdust-v2@{self.sha}"])
+        self.assertEqual(result.seen, [f"test-owner/demo-app@{self.sha}"])
         self.assertEqual(result.skipped, 1)
 
     def test_failed_private_delivery_wins_over_old_sent_and_reimport_is_idempotent(
@@ -64,9 +66,9 @@ class MigrationTests(unittest.TestCase):
                 self.assertEqual(len(queue), 1)
                 self.assertEqual(
                     queue[0]["url"],
-                    f"https://github.com/suiren0219/gdust-v2/commit/{self.sha}",
+                    f"https://github.com/test-owner/demo-app/commit/{self.sha}",
                 )
-                repo = {"id": 1, "full_name": "suiren0219/gdust-v2"}
+                repo = {"id": 1, "full_name": "test-owner/demo-app"}
                 store.discover(self.cfg.identity, [repo])
                 event = Event(
                     "new-event-key",
@@ -76,7 +78,7 @@ class MigrationTests(unittest.TestCase):
                     "body",
                     "",
                     "",
-                    (f"suiren0219/gdust-v2@{self.sha}",),
+                    (f"test-owner/demo-app@{self.sha}",),
                 )
                 self.assertEqual(
                     store.record(

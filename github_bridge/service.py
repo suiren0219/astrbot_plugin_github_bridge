@@ -114,6 +114,8 @@ class BridgeService:
         return value.public()
 
     async def test_connection(self) -> dict[str, Any]:
+        if not self.settings.value.github_owner:
+            raise ValueError("请先保存自己的 GitHub 用户名")
         if not self.settings.value.github_token:
             raise ValueError("请先保存 GitHub Token")
         if time.time() < self.cooldown_until:
@@ -240,7 +242,7 @@ class BridgeService:
         return {
             "version": __version__,
             "enabled": cfg.enabled,
-            "ready": bool(cfg.github_token and cfg.target_umo),
+            "ready": bool(cfg.github_owner and cfg.github_token and cfg.target_umo),
             "running": self.running,
             "github_owner": cfg.github_owner,
             "target_umo": cfg.target_umo,
@@ -248,6 +250,7 @@ class BridgeService:
             "last_check": self.last_check,
             "next_check": self.next_check,
             "last_error": self.last_error,
+            "configuration_warning": self.settings.configuration_warning,
             "rate_limit": getattr(self.client, "rate_limit", {}),
             "cooldown_until": self.cooldown_until,
             "counts": self.store.counts(cfg.identity),

@@ -111,10 +111,14 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         )
         self.plugin = plugin_module.GitHubBridge(self.context, {})
         self.service = Mock()
-        self.service.settings.value = Settings(github_token="unit-test-token")
+        self.service.settings.value = Settings(
+            github_owner="test-owner",
+            issue_repositories="demo-app",
+            github_token="unit-test-token",
+        )
         self.service.safe_error = str
         self.service.create_issue = AsyncMock(
-            return_value={"html_url": "https://github.com/suiren0219/gdust-v2/issues/1"}
+            return_value={"html_url": "https://github.com/test-owner/demo-app/issues/1"}
         )
         self.service.update_settings = AsyncMock()
         self.plugin.service = self.service
@@ -132,6 +136,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
                 SettingsStore(
                     root,
                     {
+                        "github_owner": "test-owner",
                         "github_token": "test-token",
                         "target_umo": "qq:FriendMessage:1",
                         "enabled": True,
@@ -166,14 +171,14 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
     async def test_ordinary_user_and_group_are_silent(self):
         for event in (
             Event("gh panel", admin=False),
-            Event("gh bug gdust-v2 | 标题 | 内容", private=False),
+            Event("gh bug demo-app | 标题 | 内容", private=False),
         ):
             self.assertEqual(await self.command(event), [])
             self.assertTrue(event.stopped)
         self.service.create_issue.assert_not_awaited()
 
     async def test_bug_requires_confirmation_and_draft_cannot_be_reused(self):
-        reply = await self.command(Event("gh bug gdust-v2 | 标题 | 正文\n第二行"))
+        reply = await self.command(Event("gh bug demo-app | 标题 | 正文\n第二行"))
         self.assertIn("尚未向 GitHub 发送", reply[0])
         self.service.create_issue.assert_not_awaited()
         code = next(iter(self.plugin.drafts.items))
@@ -185,7 +190,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         result = await self.command(Event(f"gh confirm {code}"))
         self.assertIn("Issue 已创建", result[0])
         self.service.create_issue.assert_awaited_once_with(
-            "suiren0219/gdust-v2", "标题", "正文\n第二行"
+            "test-owner/demo-app", "标题", "正文\n第二行"
         )
         await self.command(Event(f"gh confirm {code}"))
         self.assertEqual(self.service.create_issue.await_count, 1)
@@ -215,7 +220,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("新登录口令", replies[0])
 
     async def test_group_history_uses_exact_backend_action_and_does_not_publish(self):
-        event = Event("gh fromgroup 98765 gdust-v2 | 导入错误 | 复现信息")
+        event = Event("gh fromgroup 98765 demo-app | 导入错误 | 复现信息")
         result = await self.command(event)
         event.bot.call_action.assert_awaited_once_with(
             "get_group_msg_history", group_id=98765, count=20, self_id="bot123"
@@ -229,7 +234,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("unit-test-token", result[0])
 
     async def test_failed_issue_write_does_not_automatically_retry(self):
-        await self.command(Event("gh bug gdust-v2 | 标题 | 正文"))
+        await self.command(Event("gh bug demo-app | 标题 | 正文"))
         code = next(iter(self.plugin.drafts.items))
         self.service.create_issue.side_effect = TimeoutError()
         result = await self.command(Event(f"gh confirm {code}"))

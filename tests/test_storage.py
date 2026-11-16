@@ -132,16 +132,20 @@ class SettingsTests(unittest.TestCase):
             Settings(max_push_per_cycle=True).validate()
 
     def test_repo_allowlist_is_owner_scoped(self):
-        settings = Settings()
-        self.assertTrue(settings.allows_issue("suiren0219/gdust-v2"))
-        self.assertTrue(settings.allows_issue("suiren0219/astrbot_plugin_demo"))
-        self.assertFalse(settings.allows_issue("evil/gdust-v2"))
-        self.assertFalse(settings.allows_issue("suiren0219/GKDX"))
+        settings = Settings(
+            github_owner="test-owner", issue_repositories="demo-app,plugin-*"
+        )
+        self.assertTrue(settings.allows_issue("test-owner/demo-app"))
+        self.assertTrue(settings.allows_issue("test-owner/plugin-example"))
+        self.assertFalse(settings.allows_issue("evil/demo-app"))
+        self.assertFalse(settings.allows_issue("test-owner/other-repo"))
 
     def test_token_is_write_only_and_enable_requires_explicit_private_target(self):
         with tempfile.TemporaryDirectory() as temp:
             store = SettingsStore(Path(temp))
-            store.update({"github_token": "sample-secret"})
+            store.update(
+                {"github_owner": "test-owner", "github_token": "sample-secret"}
+            )
             self.assertEqual(store.value.target_umo, "")
             self.assertNotIn("sample-secret", str(store.value.public()))
             with self.assertRaises(ValueError):

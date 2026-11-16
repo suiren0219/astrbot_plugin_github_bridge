@@ -50,6 +50,7 @@ def files() -> list[Path]:
         if (
             set(relative.parts) & EXCLUDE_PARTS
             or path.name in EXCLUDE_NAMES
+            or path.name.startswith("settings.before-preset-cleanup.")
             or path.name.startswith(".env")
             or path.is_symlink()
             or path.suffix in EXCLUDE_SUFFIXES

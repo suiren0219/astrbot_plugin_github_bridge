@@ -8,30 +8,32 @@ from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
-DEFAULT_TARGET = ""
+from .settings_migration import SETTINGS_SCHEMA_VERSION, clear_legacy_presets
+
 REPO_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
 @dataclass
 class Settings:
     enabled: bool = False
-    github_owner: str = "suiren0219"
+    github_owner: str = ""
     github_token: str = ""
-    target_umo: str = DEFAULT_TARGET
+    target_umo: str = ""
     poll_interval: int = 120
     max_push_per_cycle: int = 5
     monitor_commits: bool = True
     monitor_releases: bool = True
     monitor_issues: bool = True
     monitor_metadata: bool = True
-    issue_repositories: str = "gdust-v2,astrbot_plugin_*"
+    issue_repositories: str = ""
     excluded_repositories: str = ""
     request_timeout: int = 25
     max_pages: int = 20
 
     def validate(self) -> None:
-        if not isinstance(self.github_owner, str) or not re.fullmatch(
-            r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", self.github_owner
+        if not isinstance(self.github_owner, str) or (
+            self.github_owner
+            and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", self.github_owner)
         ):
             raise ValueError("GitHub 用户名格式不正确")
         if not isinstance(self.target_umo, str) or (
@@ -63,6 +65,8 @@ class Settings:
             value = getattr(self, key)
             if not isinstance(value, str) or len(value) > 4096:
                 raise ValueError(f"{key} 格式不正确或过长")
+        if self.enabled and not self.github_owner:
+            raise ValueError("启用监控前请填写自己的 GitHub 用户名")
         if self.enabled and not self.github_token.strip():
             raise ValueError("启用监控前请保存 GitHub Token")
         if self.enabled and not self.target_umo:
@@ -132,8 +136,26 @@ class SettingsStore:
         data = {
             key: value for key, value in (initial or {}).items() if key in valid_keys
         }
+        original = None
+        changed = []
         if self.path.exists():
-            data.update(json.loads(self.path.read_text(encoding="utf-8")))
+            original = self.path.read_text(encoding="utf-8")
+            saved = json.loads(original)
+            if not isinstance(saved, dict):
+                raise ValueError("settings.json 必须是 JSON 对象")
+            cleaned, changed = clear_legacy_presets(saved)
+            data.update(cleaned)
+        notices = data.get("_cleared_legacy_presets", [])
+        self.cleared_legacy_presets = (
+            [
+                key
+                for key in notices
+                if isinstance(key, str)
+                and key in {"github_owner", "issue_repositories", "target_umo"}
+            ]
+            if isinstance(notices, list)
+            else []
+        )
         # 环境变量适用于容器 secret，优先于落盘值。
         if os.environ.get("GITHUB_BRIDGE_TOKEN"):
             data["github_token"] = os.environ["GITHUB_BRIDGE_TOKEN"]
@@ -141,11 +163,36 @@ class SettingsStore:
             **{key: value for key, value in data.items() if key in valid_keys}
         )
         self.value.validate()
-        if not self.path.exists():
+        if changed:
+            backup = (
+                data_dir / f"settings.before-preset-cleanup.{secrets.token_hex(6)}.json"
+            )
+            secure_write(backup, original)
+        if (
+            original is None
+            or changed
+            or data.get("_schema_version") != SETTINGS_SCHEMA_VERSION
+        ):
             self._persist(self.value)
 
-    def _persist(self, value: Settings) -> None:
+    @property
+    def configuration_warning(self) -> str:
+        if not self.cleared_legacy_presets:
+            return ""
+        labels = {
+            "github_owner": "GitHub 用户名",
+            "issue_repositories": "Issue 允许列表",
+            "target_umo": "私聊目标",
+        }
+        fields_text = "、".join(labels[key] for key in self.cleared_legacy_presets)
+        return f"已清理旧版内置预设（{fields_text}）并暂停监控，原配置已备份。请填写自己的配置并保存后再启用。"
+
+    def _persist(self, value: Settings, notices: list[str] | None = None) -> None:
         data = asdict(value)
+        data["_schema_version"] = SETTINGS_SCHEMA_VERSION
+        data["_cleared_legacy_presets"] = (
+            self.cleared_legacy_presets if notices is None else notices
+        )
         if os.environ.get("GITHUB_BRIDGE_TOKEN"):
             data["github_token"] = ""
         secure_write(self.path, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
@@ -166,6 +213,8 @@ class SettingsStore:
             updated["github_token"] = ""
         value = Settings(**updated)
         value.validate()
-        self._persist(value)
+        notices = [key for key in self.cleared_legacy_presets if key not in patch]
+        self._persist(value, notices)
         self.value = value
+        self.cleared_legacy_presets = notices
         return value
