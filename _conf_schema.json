@@ -1,0 +1,8 @@
+{
+  "monitor_enabled": {
+    "description": "插件加载后自动启动监控轮询",
+    "type": "bool",
+    "default": true,
+    "hint": "关闭后监控仅在管理员私聊 /gh resume 或管理页手动启用时运行。管理页位于 AstrBot Dashboard → 插件 → GitHub Bridge → 可视化视图。"
+  }
+}

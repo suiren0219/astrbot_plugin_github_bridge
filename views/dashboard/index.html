@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f3f5ef">
+  <meta name="referrer" content="same-origin">
+  <title>GitHub Bridge · 管理面板</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <svg class="icon-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <symbol id="i-bridge" viewBox="0 0 24 24"><path d="M3 19V8m18 11V8M7 19V5m10 14V5M3 10c2 0 3-1 4-3 2 7 8 7 10 0 1 2 2 3 4 3M3 16h18M10 13v3m4-3v3"/></symbol>
+      <symbol id="i-github" viewBox="0 0 24 24"><path d="M9 19c-4 1-4-2-6-2m12 4v-3.5a3 3 0 0 0-.8-2.3c2.7-.3 5.5-1.3 5.5-6a4.7 4.7 0 0 0-1.3-3.3 4.3 4.3 0 0 0-.1-3.2s-1-.3-3.4 1.3a11.5 11.5 0 0 0-6 0C6.6 2.4 5.6 2.7 5.6 2.7a4.3 4.3 0 0 0-.1 3.2 4.7 4.7 0 0 0-1.3 3.3c0 4.7 2.8 5.7 5.5 6A3 3 0 0 0 9 17.5V21"/></symbol>
+      <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+      <symbol id="i-repo" viewBox="0 0 24 24"><path d="M5 3h14v18H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm0 14h14M7 3v10m3-6h5"/></symbol>
+      <symbol id="i-send" viewBox="0 0 24 24"><path d="m21 3-7 18-4-7-7-4 18-7ZM10 14 21 3"/></symbol>
+      <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="m9 3-.5 2.2-2 1.2-2.2-.7-2 3.6L4 11v2l-1.7 1.7 2 3.6 2.2-.7 2 1.2L9 21h6l.5-2.2 2-1.2 2.2.7 2-3.6L20 13v-2l1.7-1.7-2-3.6-2.2.7-2-1.2L15 3H9Z"/></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 6A8 8 0 0 1 20 12M4 12a8 8 0 0 0 13.9 6"/></symbol>
+      <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
+      <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 3h7v7M21 3 10 14m0-9H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 4v3"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.5 13A9 9 0 0 1 11 3.5 9 9 0 1 0 20.5 13Z"/></symbol>
+      <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="13" rx="3"/><path d="M8 21h8m-4-5v5"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+      <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.8 5.7L21 9.6 16.5 14l1.1 6.2L12 17.3l-5.6 2.9L7.5 14 3 9.6l6.2-.9L12 3Z"/></symbol>
+      <symbol id="i-fork" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="12" cy="19" r="2"/><path d="M6 7v3c0 3 6 2 6 6v1m6-10v3c0 3-6 2-6 6"/></symbol>
+      <symbol id="i-issue" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 3v.01"/></symbol>
+      <symbol id="i-commit" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M2 12h6m8 0h6"/></symbol>
+      <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3 3h8l10 10-8 8L3 11V3Z"/><circle cx="7.5" cy="7.5" r=".75"/></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.01"/></symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24"><path d="m12 3 10 18H2L12 3Zm0 6v5m0 3v.01"/></symbol>
+      <symbol id="i-import" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol>
+      <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 4H4v16h5m5-13 5 5-5 5m-6-5h13"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/></symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+      <symbol id="i-activity" viewBox="0 0 24 24"><path d="M2 12h5l3-8 4 16 3-8h5"/></symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 11a9 9 0 0 1-9 9 11 11 0 0 1-4-.8L3 21l1.8-5A9 9 0 1 1 21 11Z"/><path d="M8 11h8m-8 4h4"/></symbol>
+      <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="6" r="2"/><path d="M6 7v10m0-4c7 0 12-1 12-5"/></symbol>
+    </defs>
+  </svg>
+
+  <a class="skip-link" href="#main-content">跳至主要内容</a>
+  <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="false"></div>
+
+  <div id="boot-screen" class="boot-screen" role="status">
+    <span class="brand-mark"><svg class="icon"><use href="#i-bridge"/></svg></span>
+    <span class="spinner"></span><p>正在连接管理面板</p>
+  </div>
+
+  <div id="app-shell" hidden>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="#overview"><span class="brand-mark"><svg class="icon"><use href="#i-bridge"/></svg></span><span class="brand-copy">GitHub Bridge<small>你的代码动态中转站</small></span></a>
+        <div class="topbar-actions">
+          <span id="connection-indicator" class="connection-indicator"><span class="status-dot dot-muted"></span><span id="connection-text">连接中</span></span>
+          <span class="toolbar-divider" aria-hidden="true"></span>
+          <button class="icon-button" type="button" data-action="theme-cycle" aria-label="切换外观主题" title="切换外观主题"><svg class="icon theme-icon"><use href="#i-sun"/></svg></button>
+          <button id="refresh-all" class="icon-button" type="button" aria-label="刷新面板数据" title="刷新面板数据"><svg class="icon"><use href="#i-refresh"/></svg></button>
+          <a class="account-avatar" href="#settings" aria-label="打开账户设置"><svg class="icon"><use href="#i-github"/></svg></a>
+        </div>
+      </div>
+    </header>
+
+    <main id="main-content" class="main-content" tabindex="-1">
+      <div id="preview-banner" class="notice preview-banner" role="status" hidden><span class="tag tag-amber">PREVIEW</span><strong>演示数据 · 不连接 GitHub / QQ</strong><span>这里的操作仅用于体验界面。</span></div>
+      <div id="global-error" class="notice notice-error" role="alert" hidden><svg class="icon"><use href="#i-alert"/></svg><div><strong>暂时无法同步</strong><p id="global-error-message"></p></div><button class="button button-small button-quiet" type="button" data-action="refresh">重试</button></div>
+      <div class="page-heading">
+        <div><p class="eyebrow" id="page-eyebrow">WORKSPACE OVERVIEW</p><h1 id="page-title">一切动态，尽在此处<span class="heading-dot">.</span></h1><p id="page-description" class="page-description">连接你的仓库，让值得关注的更新及时抵达。</p></div>
+        <button class="button button-tonal" id="page-check" type="button" data-action="check" disabled><svg class="icon"><use href="#i-refresh"/></svg><span>立即检查</span></button>
+      </div>
+
+      <section id="page-overview" class="page" data-page="overview" role="tabpanel" aria-labelledby="nav-overview">
+        <div class="overview-top">
+          <article id="status-hero" class="status-hero" aria-busy="true">
+            <div class="hero-top"><div class="hero-tags"><span id="hero-status-tag" class="tag hero-tag"><span class="status-dot"></span><span id="hero-status-label">正在连接</span></span><span class="tag hero-tag">GITHUB → QQ</span></div><button type="button" class="switch hero-switch" role="switch" aria-checked="false" aria-label="启用自动监控" data-setting-toggle="enabled" disabled><span class="switch-thumb"></span></button></div>
+            <div class="hero-copy"><h2 id="hero-title">正在读取状态</h2><p id="hero-description">稍等片刻，正在连接你的桥梁。</p><span class="hero-version mono" id="hero-version">版本 —</span></div>
+            <div class="hero-bottom"><div><span>上次检查</span><strong id="hero-last-check">—</strong></div><span class="hero-separator"></span><div><span>下次检查</span><strong id="hero-next-check">—</strong></div></div>
+            <svg class="hero-watermark" aria-hidden="true"><use href="#i-bridge"/></svg>
+          </article>
+          <article class="card route-card">
+            <div class="section-heading"><h2>消息的旅程</h2><span class="tag">PRIVATE</span></div>
+            <div class="route-step"><span class="route-icon"><svg class="icon"><use href="#i-github"/></svg></span><div><span class="route-label">来源 · GitHub</span><strong id="route-owner">—</strong></div><span id="route-source-dot" class="status-dot dot-muted" aria-label="尚未读取连接状态"></span></div>
+            <div class="route-connector" aria-hidden="true"><span></span><small>捕捉变化，安静传递</small></div>
+            <div class="route-step"><span class="route-icon route-icon-target"><svg class="icon"><use href="#i-chat"/></svg></span><div><span class="route-label">目的地 · AstrBot 私聊</span><strong id="route-target">—</strong></div><svg class="icon route-lock" aria-hidden="true"><use href="#i-lock"/></svg></div>
+            <a href="#settings" class="text-link route-edit">管理连接<svg class="icon"><use href="#i-arrow"/></svg></a>
+          </article>
+        </div>
+
+        <div id="setup-guide" class="setup-guide card" hidden><span class="icon-tile"><svg class="icon"><use href="#i-bridge"/></svg></span><div><h2>桥梁就位，还差最后一步</h2><p>保存 GitHub Token → 确认私聊目标 → 开启监控。首次检查只建立基线，不推送历史动态。</p></div><a class="button button-primary button-small" href="#settings">完成连接<svg class="icon"><use href="#i-arrow"/></svg></a></div>
+        <div id="status-error" class="notice notice-error" hidden><svg class="icon"><use href="#i-alert"/></svg><div><strong>最近一次检查遇到问题</strong><p id="status-error-message"></p></div><a class="text-link" href="#settings">检查配置</a></div>
+
+        <div class="stats-grid" aria-label="监控统计">
+          <a href="#repositories" class="stat-card card"><span class="stat-heading">监控仓库<svg class="icon"><use href="#i-repo"/></svg></span><strong id="count-repositories" class="stat-value">—</strong><span class="stat-caption">每一个变化，都有迹可循<svg class="icon"><use href="#i-arrow"/></svg></span></a>
+          <a href="#events" class="stat-card card" data-event-filter="sent"><span class="stat-heading">已送达<svg class="icon stat-icon-green"><use href="#i-check"/></svg></span><strong id="count-sent" class="stat-value">—</strong><span class="stat-caption"><span><span class="status-dot"></span> 已发送至私聊</span><svg class="icon"><use href="#i-arrow"/></svg></span></a>
+          <a href="#events" class="stat-card card" data-event-filter="pending"><span class="stat-heading">待推送<svg class="icon"><use href="#i-clock"/></svg></span><strong id="count-pending" class="stat-value">—</strong><span class="stat-caption">等待下一次发送<svg class="icon"><use href="#i-arrow"/></svg></span></a>
+          <a href="#events" class="stat-card card" data-event-filter="failed"><span class="stat-heading">需留意<svg class="icon stat-icon-red"><use href="#i-issue"/></svg></span><strong id="count-failed" class="stat-value">—</strong><span class="stat-caption"><span><span class="status-dot dot-red"></span> 发送失败，可重新尝试</span><svg class="icon"><use href="#i-arrow"/></svg></span></a>
+        </div>
+
+        <div class="overview-bottom">
+          <article class="card recent-card"><div class="section-heading"><div><h2>最近动态</h2><p>仓库里的新鲜事，在这里汇合。</p></div><a href="#events" class="text-link">查看全部<svg class="icon"><use href="#i-arrow"/></svg></a></div><div id="recent-events" class="recent-list" aria-busy="true"><div class="list-loading"><span class="spinner"></span><span>正在读取最近动态</span></div></div></article>
+          <article class="card runtime-card"><div class="section-heading"><h2>运行信息</h2><svg class="icon muted"><use href="#i-activity"/></svg></div><dl class="info-list"><div><dt>检查间隔</dt><dd id="runtime-interval" class="mono">—</dd></div><div><dt>插件版本</dt><dd id="runtime-version" class="mono">—</dd></div><div><dt>监控状态</dt><dd id="runtime-state">正在读取</dd></div></dl><div class="quota-block"><div class="quota-heading"><span>GitHub API 额度</span><strong id="quota-value" class="mono">— / —</strong></div><progress id="quota-progress" max="100" value="0" aria-label="GitHub API 剩余额度"></progress><p id="quota-reset" class="field-hint">等待接口返回额度信息</p></div><div class="quiet-note"><svg class="icon"><use href="#i-shield"/></svg><p>首次检查静音建立基线，之后仅推送新增变化。</p></div></article>
+        </div>
+      </section>
+
+      <section id="page-repositories" class="page" data-page="repositories" role="tabpanel" aria-labelledby="nav-repositories" hidden>
+        <div class="collection-toolbar"><label class="search-box" for="repo-search"><svg class="icon"><use href="#i-search"/></svg><input id="repo-search" type="search" autocomplete="off" placeholder="搜索仓库名称或描述" aria-label="搜索仓库名称或描述"><kbd aria-hidden="true">/</kbd></label><div class="filter-group" id="repo-filters" role="group" aria-label="仓库筛选"><button type="button" data-repo-filter="all" aria-pressed="true">全部</button><button type="button" data-repo-filter="private" aria-pressed="false">私有</button><button type="button" data-repo-filter="archived" aria-pressed="false">已归档</button><button type="button" data-repo-filter="error" aria-pressed="false">异常</button></div></div>
+        <div class="collection-meta"><p id="repo-results" role="status">正在读取仓库</p><span class="muted">由 GitHub 同步 · 只读列表</span></div>
+        <div id="repositories-list" class="repositories-grid" aria-busy="true"><div class="list-loading"><span class="spinner"></span><span>正在同步仓库列表</span></div></div>
+      </section>
+
+      <section id="page-events" class="page" data-page="events" role="tabpanel" aria-labelledby="nav-events" hidden>
+        <div class="collection-toolbar event-toolbar"><div class="filter-group" id="event-filters" role="group" aria-label="推送状态筛选"><button type="button" data-status-filter="all" aria-pressed="true">全部动态</button><button type="button" data-status-filter="pending" aria-pressed="false">待推送<span data-filter-count="pending">—</span></button><button type="button" data-status-filter="sent" aria-pressed="false">已送达<span data-filter-count="sent">—</span></button><button type="button" data-status-filter="failed" aria-pressed="false">失败<span data-filter-count="failed">—</span></button></div><div class="inline-actions"><button class="button button-quiet button-small" type="button" data-action="import"><svg class="icon"><use href="#i-import"/></svg>导入旧记录</button><button id="retry-all" class="button button-tonal button-small" type="button" disabled><svg class="icon"><use href="#i-refresh"/></svg>重试失败项</button></div></div>
+        <div class="collection-meta"><p id="event-results" role="status">正在读取推送记录</p><span class="muted">最近 50 条 · 点击查看详情</span></div>
+        <div id="events-list" class="card events-list" aria-busy="true"><div class="list-loading"><span class="spinner"></span><span>正在读取推送记录</span></div></div>
+        <div class="quiet-note event-note"><svg class="icon"><use href="#i-info"/></svg><p>失败记录会保留错误信息。重试后重新进入发送队列，不会立刻重复发送已送达的消息。</p></div>
+      </section>
+
+      <section id="page-settings" class="page" data-page="settings" role="tabpanel" aria-labelledby="nav-settings" hidden>
+        <div id="settings-loading" class="card list-loading"><span class="spinner"></span><span>正在读取配置</span></div>
+        <div id="settings-load-error" class="card empty-state" hidden><span class="icon-tile"><svg class="icon"><use href="#i-alert"/></svg></span><h2>配置暂时不可用</h2><p id="settings-load-error-message"></p><button class="button button-tonal" type="button" data-action="reload-settings">重新加载</button></div>
+        <div id="settings-content" hidden>
+          <div class="settings-layout">
+            <div class="settings-main">
+              <article class="card settings-card service-setting"><div class="preference-row"><span class="icon-tile small"><svg class="icon"><use href="#i-activity"/></svg></span><div class="preference-copy"><h2>自动监控</h2><p id="enabled-description">按设定间隔检查仓库，发现变化后推送。</p></div><button type="button" class="switch" role="switch" aria-checked="false" aria-label="启用自动监控" data-setting-toggle="enabled" disabled><span class="switch-thumb"></span></button></div></article>
+              <form id="settings-form">
+                <fieldset id="settings-fields" disabled>
+                  <article class="card settings-card"><div class="section-heading"><div><span class="section-number mono">01 / CONNECTION</span><h2>连接与凭据</h2><p>连接你的 GitHub 账户和消息目的地。</p></div><svg class="icon muted"><use href="#i-github"/></svg></div>
+                    <div class="field"><label for="github-owner">GitHub 用户名</label><input id="github-owner" name="github_owner" type="text" placeholder="suiren0219" autocomplete="off" required maxlength="39" pattern="[A-Za-z0-9][A-Za-z0-9\-]{0,38}" spellcheck="false" aria-describedby="owner-hint"><p class="field-hint" id="owner-hint">将同步该账户可访问、符合监控范围的仓库。</p></div>
+                    <div class="field"><div class="field-label-row"><label for="github-token">Personal access token</label><span id="token-configured" class="tag">正在读取</span></div><input id="github-token" name="github_token" type="password" placeholder="留空以保留已保存的 Token" autocomplete="new-password" maxlength="4096" spellcheck="false" aria-describedby="token-hint"><p class="field-hint" id="token-hint">仅在更换时填写。已保存的凭据不会在此处显示。</p></div>
+                    <div class="field"><label for="target-umo">私聊目标 UMO</label><input id="target-umo" name="target_umo" class="mono" type="text" placeholder="恩赫里亚:FriendMessage:1906986796" required maxlength="512" spellcheck="false" aria-describedby="target-hint"><p class="field-hint" id="target-hint">格式：平台ID:FriendMessage:用户ID。仅支持私聊，平台 ID 应与 AstrBot 配置一致。</p></div>
+                  </article>
+                  <article class="card settings-card"><div class="section-heading"><div><span class="section-number mono">02 / DELIVERY</span><h2>检查与推送</h2><p>让消息按你的节奏抵达。</p></div><svg class="icon muted"><use href="#i-clock"/></svg></div>
+                    <div class="field-pair"><div class="field"><label for="poll-interval">检查间隔 <span class="muted">/ 秒</span></label><input id="poll-interval" name="poll_interval" type="number" min="60" max="86400" step="1" required inputmode="numeric" aria-describedby="interval-hint"><p id="interval-hint" class="field-hint">至少 60 秒，默认 120 秒。</p></div><div class="field"><label for="max-push">每轮推送上限 <span class="muted">/ 条</span></label><input id="max-push" name="max_push_per_cycle" type="number" min="1" max="20" step="1" required inputmode="numeric" aria-describedby="push-hint"><p id="push-hint" class="field-hint">1–20 条，默认每轮 5 条。</p></div></div>
+                    <div class="field"><label for="issue-repositories">允许创建 Issue 的仓库</label><input id="issue-repositories" name="issue_repositories" class="mono" type="text" maxlength="4096" placeholder="gdust-v2,astrbot_plugin_*" spellcheck="false" aria-describedby="issue-hint"><p id="issue-hint" class="field-hint">多个名称用英文逗号分隔；支持名称末尾的 * 前缀匹配。只在需要通过机器人创建 Issue 时授权写入。</p></div>
+                    <div class="field"><label for="excluded-repositories">排除仓库 <span class="muted">/ 可选</span></label><input id="excluded-repositories" name="excluded_repositories" class="mono" type="text" maxlength="4096" placeholder="repo-name,owner/another-repo" spellcheck="false" aria-describedby="excluded-hint"><p id="excluded-hint" class="field-hint">英文逗号分隔；支持仓库名称或 owner/repo 完整名称。</p></div>
+                    <details class="advanced-settings"><summary>高级连接设置<svg class="icon"><use href="#i-chevron"/></svg></summary><div class="field-pair"><div class="field"><label for="request-timeout">请求超时 / 秒</label><input id="request-timeout" name="request_timeout" type="number" min="5" max="120" step="1" required inputmode="numeric"></div><div class="field"><label for="max-pages">最大分页数</label><input id="max-pages" name="max_pages" type="number" min="1" max="100" step="1" required inputmode="numeric"></div></div></details>
+                  </article>
+                </fieldset>
+                <p id="settings-error" class="inline-error" role="alert" hidden></p>
+                <div class="save-bar"><p id="save-state"><span class="status-dot dot-muted"></span>配置已同步</p><div class="inline-actions"><button id="discard-settings" class="button button-quiet" type="button" disabled>撤销修改</button><button id="save-settings" class="button button-primary" type="submit" disabled><svg class="icon"><use href="#i-check"/></svg><span>保存配置</span></button></div></div>
+              </form>
+              <article class="card settings-card monitor-card"><div class="section-heading"><div><span class="section-number mono">03 / WATCHING</span><h2>关注哪些变化</h2><p>开关在服务端保存成功后生效。</p></div><span class="tag tag-green">即时保存</span></div>
+                <div class="preference-row"><span class="preference-icon"><svg class="icon"><use href="#i-commit"/></svg></span><div class="preference-copy"><h3>代码提交</h3><p>默认分支上的新提交</p></div><button type="button" class="switch" role="switch" aria-checked="false" aria-label="监控代码提交" data-setting-toggle="monitor_commits" disabled><span class="switch-thumb"></span></button></div>
+                <div class="preference-row"><span class="preference-icon"><svg class="icon"><use href="#i-tag"/></svg></span><div class="preference-copy"><h3>版本发布</h3><p>仓库的 Release 更新</p></div><button type="button" class="switch" role="switch" aria-checked="false" aria-label="监控版本发布" data-setting-toggle="monitor_releases" disabled><span class="switch-thumb"></span></button></div>
+                <div class="preference-row"><span class="preference-icon"><svg class="icon"><use href="#i-issue"/></svg></span><div class="preference-copy"><h3>Issue 动态</h3><p>新问题与状态变化</p></div><button type="button" class="switch" role="switch" aria-checked="false" aria-label="监控 Issue 动态" data-setting-toggle="monitor_issues" disabled><span class="switch-thumb"></span></button></div>
+                <div class="preference-row"><span class="preference-icon"><svg class="icon"><use href="#i-repo"/></svg></span><div class="preference-copy"><h3>仓库信息</h3><p>描述、分支等元信息变化</p></div><button type="button" class="switch" role="switch" aria-checked="false" aria-label="监控仓库信息" data-setting-toggle="monitor_metadata" disabled><span class="switch-thumb"></span></button></div>
+              </article>
+            </div>
+            <aside class="settings-aside">
+              <article class="card settings-card permission-card"><span class="icon-tile"><svg class="icon"><use href="#i-shield"/></svg></span><h2>刚刚好的权限</h2><p>建议创建 Fine-grained PAT。希望新仓库自动纳入时，仓库范围选 All repositories；只监控指定仓库时可选 Selected repositories。</p><dl class="permission-list"><div><dt class="mono">Metadata</dt><dd class="tag tag-green">Read-only</dd></div><div><dt class="mono">Contents</dt><dd class="tag tag-green">Read-only</dd></div><div><dt class="mono">Issues</dt><dd class="tag tag-green">Read-only</dd></div></dl><p class="field-hint">日常监控只需读取权限。只有通过机器人创建 Issue 时，才需要将 Issues 改为 Read and write。</p><button id="test-connection" class="button button-tonal full-width" type="button" disabled><svg class="icon"><use href="#i-activity"/></svg>测试已保存的连接</button><p id="test-result" class="field-hint" role="status">只读测试，不会创建 Issue 或发送 QQ 消息。</p></article>
+              <article class="card settings-card appearance-card"><div class="section-heading"><h2>你的外观</h2><svg class="icon muted"><use href="#i-sun"/></svg></div><div class="theme-options" role="group" aria-label="外观主题"><button type="button" data-theme-choice="system" aria-pressed="true"><svg class="icon"><use href="#i-monitor"/></svg><span>跟随系统</span></button><button type="button" data-theme-choice="light" aria-pressed="false"><svg class="icon"><use href="#i-sun"/></svg><span>浅色</span></button><button type="button" data-theme-choice="dark" aria-pressed="false"><svg class="icon"><use href="#i-moon"/></svg><span>深色</span></button><button type="button" data-theme-choice="amoled" aria-pressed="false"><span class="amoled-swatch" aria-hidden="true"></span><span>AMOLED</span></button></div><p class="field-hint">仅在当前浏览器保存外观偏好。</p></article>
+              <article class="card settings-card compact-settings"><button type="button" class="preference-action" data-action="import"><svg class="icon"><use href="#i-import"/></svg><span>迁移旧推送记录<small>本地 JSON 文件或粘贴内容</small></span><svg class="icon"><use href="#i-chevron"/></svg></button></article>
+              <p class="settings-footnote mono">GITHUB BRIDGE<br><span id="settings-version">—</span> · BUILT FOR ASTRBOT</p>
+            </aside>
+          </div>
+        </div>
+      </section>
+      <footer class="workspace-footer"><span><span class="status-dot"></span> 每一次连接，都有意义。</span><span id="last-refreshed">等待同步</span></footer>
+    </main>
+
+    <nav class="floating-nav" role="tablist" aria-label="主要导航">
+      <a id="nav-overview" class="nav-item" href="#overview" role="tab" aria-selected="true" aria-controls="page-overview" tabindex="0"><svg class="icon"><use href="#i-grid"/></svg><span>总览</span></a>
+      <a id="nav-repositories" class="nav-item" href="#repositories" role="tab" aria-selected="false" aria-controls="page-repositories" tabindex="-1"><svg class="icon"><use href="#i-repo"/></svg><span>仓库</span></a>
+      <a id="nav-events" class="nav-item" href="#events" role="tab" aria-selected="false" aria-controls="page-events" tabindex="-1"><span class="nav-icon-wrap"><svg class="icon"><use href="#i-send"/></svg><span id="nav-failed-badge" class="nav-badge" aria-hidden="true" hidden></span></span><span>推送</span></a>
+      <a id="nav-settings" class="nav-item" href="#settings" role="tab" aria-selected="false" aria-controls="page-settings" tabindex="-1"><svg class="icon"><use href="#i-settings"/></svg><span>设置</span></a>
+    </nav>
+  </div>
+
+  <dialog id="import-dialog" class="import-dialog" aria-labelledby="import-title" aria-describedby="import-description">
+    <div class="dialog-heading"><span class="icon-tile"><svg class="icon"><use href="#i-import"/></svg></span><button id="close-import" class="icon-button" type="button" aria-label="关闭导入窗口"><svg class="icon"><use href="#i-close"/></svg></button></div>
+    <h2 id="import-title">把旧记录一起带过来</h2><p id="import-description" class="muted">已发送记录用于去重，失败记录将进入重试队列。只读取你选择的本地文件，不接受服务端文件路径。</p>
+    <form id="import-form">
+      <div class="import-columns">
+        <div class="import-source"><label class="field-label" for="import-sent">已发送记录 <span class="tag tag-green">SENT</span></label><textarea id="import-sent" class="mono" rows="7" spellcheck="false" placeholder="粘贴旧版 sent JSON 对象，例如 {}" aria-describedby="import-sent-file-state"></textarea><div class="file-actions"><label class="button button-tonal button-small file-label" for="import-sent-file"><svg class="icon"><use href="#i-import"/></svg>选择 JSON 文件<input id="import-sent-file" type="file" accept=".json,application/json" data-import-file="sent"></label><button type="button" class="button button-quiet button-small" data-clear-import="sent" hidden>清除文件</button></div><p id="import-sent-file-state" class="field-hint">可粘贴或选择文件，每份最多 512 KiB，总请求小于 2 MiB。</p></div>
+        <div class="import-source"><label class="field-label" for="import-failed">失败记录 <span class="tag tag-red">FAILED</span></label><textarea id="import-failed" class="mono" rows="7" spellcheck="false" placeholder="粘贴旧版 failed JSON 数组，例如 []" aria-describedby="import-failed-file-state"></textarea><div class="file-actions"><label class="button button-tonal button-small file-label" for="import-failed-file"><svg class="icon"><use href="#i-import"/></svg>选择 JSON 文件<input id="import-failed-file" type="file" accept=".json,application/json" data-import-file="failed"></label><button type="button" class="button button-quiet button-small" data-clear-import="failed" hidden>清除文件</button></div><p id="import-failed-file-state" class="field-hint">可粘贴或选择文件，每份最多 512 KiB，总请求小于 2 MiB。</p></div>
+      </div>
+      <p id="import-error" class="inline-error" role="alert" hidden></p>
+      <div id="import-result" class="import-result" role="status" hidden></div>
+      <div class="dialog-footer"><span class="field-hint"><svg class="icon"><use href="#i-shield"/></svg>内容仅提交至当前面板</span><button id="import-submit" class="button button-primary" type="submit" disabled><svg class="icon"><use href="#i-import"/></svg><span>导入记录</span></button></div>
+    </form>
+  </dialog>
+  <noscript><div class="noscript">管理面板需要 JavaScript 才能连接服务。请启用 JavaScript 后重新载入。</div></noscript>
+</body>
+</html>
