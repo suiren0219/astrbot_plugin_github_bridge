@@ -1,0 +1,8 @@
+{
+  "views": {
+    "dashboard": {
+      "title": "GitHub Bridge 管理台",
+      "description": "查看仓库监控状态、推送队列和脱敏配置。"
+    }
+  }
+}

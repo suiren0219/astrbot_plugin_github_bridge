@@ -1,0 +1,8 @@
+{
+  "monitor_enabled": {
+    "description": "加载时允许恢复上次监控状态",
+    "type": "bool",
+    "default": true,
+    "hint": "开启时保留管理页最后保存的监控状态；关闭时每次重载都先暂停，之后可用 /gh resume 或管理页手动开启。管理页位于插件详情的可视化视图 dashboard。"
+  }
+}
