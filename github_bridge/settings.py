@@ -29,6 +29,10 @@ class Settings:
     excluded_repositories: str = ""
     request_timeout: int = 25
     max_pages: int = 20
+    ai_summary_enabled: bool = True
+    ai_summary_provider_id: str = ""
+    ai_summary_timeout: int = 15
+    ai_summary_private: bool = False
 
     def validate(self) -> None:
         if not isinstance(self.github_owner, str) or (
@@ -48,6 +52,7 @@ class Settings:
             ("max_push_per_cycle", 1, 20),
             ("request_timeout", 5, 120),
             ("max_pages", 1, 100),
+            ("ai_summary_timeout", 3, 60),
         ):
             value = getattr(self, key)
             if type(value) is not int or not lo <= value <= hi:
@@ -58,10 +63,17 @@ class Settings:
             "monitor_releases",
             "monitor_issues",
             "monitor_metadata",
+            "ai_summary_enabled",
+            "ai_summary_private",
         ):
             if type(getattr(self, key)) is not bool:
                 raise ValueError(f"{key} 必须为布尔值")
-        for key in ("github_token", "issue_repositories", "excluded_repositories"):
+        for key in (
+            "github_token",
+            "issue_repositories",
+            "excluded_repositories",
+            "ai_summary_provider_id",
+        ):
             value = getattr(self, key)
             if not isinstance(value, str) or len(value) > 4096:
                 raise ValueError(f"{key} 格式不正确或过长")

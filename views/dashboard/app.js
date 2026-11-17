@@ -604,7 +604,7 @@
       $('#status-error').hidden = true;
     }
     $('#preview-banner').hidden = !preview;
-    const configurationWarning = asString(current.configuration_warning).trim();
+    const configurationWarning = [current.configuration_warning, current.summary_warning].filter(Boolean).join(' ');
     text($('#configuration-warning-message'), configurationWarning);
     $('#configuration-warning').hidden = !configurationWarning;
     const setupNeeded = !ready && !lastError;
@@ -912,6 +912,8 @@
       'excluded-repositories': settings.excluded_repositories,
       'request-timeout': settings.request_timeout,
       'max-pages': settings.max_pages,
+      'summary-provider': settings.ai_summary_provider_id,
+      'summary-timeout': settings.ai_summary_timeout,
     };
     Object.entries(values).forEach(([id, value]) => {
       const element = $(`#${id}`);
@@ -930,7 +932,7 @@
     }
     const token = $('#github-token');
     if (token) token.value = '';
-    ['enabled', 'monitor_commits', 'monitor_releases', 'monitor_issues', 'monitor_metadata'].forEach((key) => {
+    ['enabled', 'monitor_commits', 'monitor_releases', 'monitor_issues', 'monitor_metadata', 'ai_summary_enabled', 'ai_summary_private'].forEach((key) => {
       $$(`[data-setting-toggle="${key}"]`).forEach((button) => setSwitch(button, asBoolean(settings[key]), false));
     });
     if (draft) Object.entries(draft).forEach(([id, value]) => { document.getElementById(id).value = value; });
@@ -1006,6 +1008,10 @@
       excluded_repositories: $('#excluded-repositories').value.trim(),
       request_timeout: Number.parseInt($('#request-timeout').value, 10),
       max_pages: Number.parseInt($('#max-pages').value, 10),
+      ai_summary_enabled: Boolean(state.settings && state.settings.ai_summary_enabled),
+      ai_summary_private: Boolean(state.settings && state.settings.ai_summary_private),
+      ai_summary_provider_id: $('#summary-provider').value.trim(),
+      ai_summary_timeout: Number.parseInt($('#summary-timeout').value, 10),
     };
     const token = $('#github-token').value;
     if (token) patch.github_token = token;
@@ -1021,6 +1027,7 @@
       ['max_push_per_cycle', 1, 20],
       ['request_timeout', 5, 120],
       ['max_pages', 1, 100],
+      ['ai_summary_timeout', 3, 60],
     ];
     for (const [key, minimum, maximum] of numericRules) {
       if (!Number.isInteger(patch[key]) || patch[key] < minimum || patch[key] > maximum) return `${key} 不在允许范围内。`;
@@ -1110,6 +1117,8 @@
       monitor_releases: '版本发布监控',
       monitor_issues: 'Issue 监控',
       monitor_metadata: '仓库信息监控',
+      ai_summary_enabled: 'AI 总结',
+      ai_summary_private: '私有内容总结',
     }[key] || '设置';
   }
 

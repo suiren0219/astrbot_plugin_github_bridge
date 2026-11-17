@@ -145,7 +145,7 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
                 service = Mock(start=AsyncMock(), close=AsyncMock())
                 captured = []
 
-                def factory(settings, store, sender):
+                def factory(settings, store, sender, **kwargs):
                     captured.append((settings, store))
                     return service
 
