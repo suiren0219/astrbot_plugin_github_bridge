@@ -1,4 +1,4 @@
-# AstrBot 开发 Wiki 对照审查 · 1.1.0
+# AstrBot 开发 Wiki 对照审查 · 1.2.0
 
 审查日期：2026-11-16；个人预设清理补充于 2026-11-17。接口基准固定为 AstrBot `v4.29.4`，不将“静态符合规范”视为真实宿主联调通过。
 
@@ -10,6 +10,15 @@
 - [插件发布](https://github.com/AstrBotDevs/AstrBot/blob/v4.29.4/docs/zh/dev/star/plugin-publish.md)：公开仓库、metadata 自动解析、包体积限制。
 - [Context 实现](https://github.com/AstrBotDevs/AstrBot/blob/v4.29.4/astrbot/core/star/context.py)：`register_web_api(route, handler, methods, desc)`，相同路由和方法替换已有注册。
 - [Web API 实现](https://github.com/AstrBotDevs/AstrBot/blob/v4.29.4/astrbot/api/web.py)：请求上下文、`body()`、`query.get(..., type=int)`、`json_response` 和 `error_response`。
+
+## 1.2.0 中文问题工作台补充
+
+- 原生 Dashboard 视图新增“问题”入口：仓库选择、问题状态筛选、分页、本页搜索、详情和评论，支持创建、评论、关闭及重开。
+- 继续通过官方 bridge 调用已鉴权的 `register_web_api` 路由；后端只使用固定 GitHub REST origin，所有写入限定本人账号、允许列表和非归档仓库，PR 编号被排除。
+- 写入分为预览与确认。草稿绑定 Dashboard 用户、10 分钟有效、确认一次即消费；确认前及远端只读检查后重新验证配置签名，避免权限变化期间继续写入。超时或取消不自动重放写请求。
+- 详情和预览均使用纯文本节点，不执行远端 HTML；提供可复制链接以适配受限 iframe。评论预览存在上限，截断时明确告知。
+- 生产页面在隔离内存 API 上完成创建、评论、关闭、重开；确认前列表不变，确认后列表与详情刷新。只读/归档写入按钮禁用，桌面分栏和 390px 手机布局已检查。
+- 新增工作台单元与端到端回归，当前共 150 项通过。全部写入仅发生在模拟客户端和临时演示数据中，没有写入真实 GitHub。
 
 ## 1.1.0 AI 总结补充
 
@@ -52,7 +61,7 @@
 
 - `main.py` 使用 `Star`、`initialize()`、`terminate()` 和官方消息发送接口；命令内再次校验 AstrBot 管理员及私聊。
 - Web API 在官方示例使用的构造阶段注册，路径包含插件名；本版本 Context 不要求额外的注册归属绑定。未启动独立生产端口。
-- `metadata.yaml` 的名称、版本、仓库、最低 AstrBot 版本和平台声明齐全；包内版本统一为 `1.1.0`。
+- `metadata.yaml` 的名称、版本、仓库、最低 AstrBot 版本和平台声明齐全；包内版本统一为 `1.2.0`。
 - 配置 schema 声明的启动开关已被消费，说明与实际行为一致。
 - `StarTools.get_data_dir(PLUGIN_NAME)` 决定数据目录；设置和 SQLite 不写入插件源目录。
 - GitHub 网络使用 `aiohttp`；第三方依赖已在 `requirements.txt` 声明，没有 `requests` 同步网络调用。
@@ -62,7 +71,7 @@
 
 ## 已完成验证
 
-- **104 项 unittest 全部通过**，含 AI 摘要、通知格式、GitHub mock、存储、通知迁移、旧配置预设清理、QQ 命令、Web API、生命周期和打包测试。
+- **150 项 unittest 全部通过**，含中文工作台、一次性确认、接口端到端流程、AI 摘要、通知格式、GitHub mock、存储、迁移、QQ 命令、Web API、生命周期和打包测试。
 - `python -m ruff check .`、`python -m ruff format --check .`、`compileall` 和 `git diff --check`。
 - 浏览器加载的是生产 `views/dashboard`；宿主采用 `sandbox="allow-scripts allow-forms allow-downloads"`，没有 `allow-same-origin`。
 - 配置保存、首次加载、通知筛选、延迟响应竞态及检查排队后的刷新已在该 iframe 中验证。

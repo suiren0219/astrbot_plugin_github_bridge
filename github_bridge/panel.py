@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from .service import BridgeService
+from .workbench import IssueWorkbench
 
 MAX_BODY_BYTES = 2 * 1024 * 1024
 
@@ -11,14 +12,31 @@ MAX_BODY_BYTES = 2 * 1024 * 1024
 class PanelAPI:
     """Dashboard 负责鉴权；这里只处理插件输入和业务响应。"""
 
-    GET_ROUTES = ("status", "repositories", "events", "settings")
-    POST_ROUTES = ("settings", "check", "test", "retry", "import")
+    GET_ROUTES = (
+        "status",
+        "repositories",
+        "events",
+        "settings",
+        "issue_repositories",
+        "issues",
+        "issue_detail",
+    )
+    POST_ROUTES = (
+        "settings",
+        "check",
+        "test",
+        "retry",
+        "import",
+        "issue_prepare",
+        "issue_confirm",
+    )
 
     def __init__(self, service: BridgeService, web_api=None):
         if web_api is None:
             from astrbot.api import web as web_api
         self.web = web_api
         self.service = service
+        self.workbench = IssueWorkbench(service)
         self.handlers = {
             ("GET", "status"): self.status,
             ("GET", "repositories"): self.repositories,
@@ -29,6 +47,11 @@ class PanelAPI:
             ("POST", "test"): self.test,
             ("POST", "retry"): self.retry,
             ("POST", "import"): self.import_legacy,
+            ("GET", "issue_repositories"): self.issue_repositories,
+            ("GET", "issues"): self.issues,
+            ("GET", "issue_detail"): self.issue_detail,
+            ("POST", "issue_prepare"): self.issue_prepare,
+            ("POST", "issue_confirm"): self.issue_confirm,
         }
 
     async def dispatch(self, method: str, endpoint: str):
@@ -121,6 +144,47 @@ class PanelAPI:
         cfg = self.service.settings.value
         count = self.service.store.retry(cfg.identity, cfg.target_umo, event_id)
         return self.web.json_response({"ok": True, "count": count})
+
+    async def issue_repositories(self):
+        return self.web.json_response(await self.workbench.repositories())
+
+    def query_number(self, key: str, default: str) -> int:
+        raw = self.web.request.query.get(key, default)
+        if not isinstance(raw, str) or not raw.isascii() or not raw.isdigit():
+            raise ValueError("页码和 Issue 编号必须为正整数")
+        return int(raw)
+
+    async def issues(self):
+        return self.web.json_response(
+            await self.workbench.list_issues(
+                self.web.request.query.get("repo", ""),
+                self.web.request.query.get("state", "open"),
+                self.query_number("page", "1"),
+            )
+        )
+
+    async def issue_detail(self):
+        return self.web.json_response(
+            await self.workbench.detail(
+                self.web.request.query.get("repo", ""),
+                self.query_number("number", "0"),
+            )
+        )
+
+    async def issue_prepare(self):
+        return self.web.json_response(
+            await self.workbench.prepare(
+                await self.payload(), self.web.request.username
+            )
+        )
+
+    async def issue_confirm(self):
+        data = await self.payload()
+        return self.web.json_response(
+            await self.workbench.confirm(
+                data.get("draft_id"), self.web.request.username
+            )
+        )
 
     async def import_legacy(self):
         from .migration import parse_legacy

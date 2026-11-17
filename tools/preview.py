@@ -14,10 +14,11 @@ from github_bridge.models import Event, Observation
 from github_bridge.service import BridgeService
 from github_bridge.settings import SettingsStore
 from github_bridge.storage import Store
+from tools.issue_demo import DemoIssueAPI
 from tools.preview_server import PreviewServer
 
 
-class DemoGitHub:
+class DemoGitHub(DemoIssueAPI):
     def __init__(self, settings):
         self.settings = settings
         self.rate_limit = {
@@ -55,7 +56,8 @@ class DemoGitHub:
                 "full_name": f"{self.settings.github_owner}/{name}",
                 "description": desc,
                 "private": False,
-                "archived": False,
+                "archived": name == "demo-web",
+                "has_issues": True,
                 "default_branch": "main",
                 "stargazers_count": stars,
                 "forks_count": forks,
@@ -67,9 +69,6 @@ class DemoGitHub:
 
     async def observe(self, repo, previous):
         return Observation({"demo": True})
-
-    async def create_issue(self, repo, title, body):
-        raise ValueError("演示服务不会向 GitHub 提交内容")
 
 
 class DemoService(BridgeService):
@@ -84,7 +83,7 @@ async def main(port: int, event_delay: float = 0):
             root,
             {
                 "github_owner": "demo-user",
-                "issue_repositories": "",
+                "issue_repositories": "demo-app,demo-calendar",
                 "github_token": "demo-placeholder-not-a-token",
                 "target_umo": "demo-bot:FriendMessage:123456",
                 "enabled": True,
@@ -96,6 +95,7 @@ async def main(port: int, event_delay: float = 0):
         async def simulated_send(target, text):
             return None
 
+        DemoGitHub.reset_issues()
         service = DemoService(settings, store, simulated_send, DemoGitHub)
         repos = service.client.repos()
         store.discover(cfg.identity, repos)

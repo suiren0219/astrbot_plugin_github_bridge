@@ -92,7 +92,7 @@ window.addEventListener('message', async event => {
   const frame = document.querySelector('iframe');
   const msg = event.data;
   if (event.source !== frame.contentWindow || msg?.channel !== 'bridge-preview') return;
-  if (!/^[a-z]+$/.test(msg.endpoint) || !['GET','POST'].includes(msg.method)) return;
+  if (!/^[a-z_]+$/.test(msg.endpoint) || !['GET','POST'].includes(msg.method)) return;
   try {
     let url = '/api/' + msg.endpoint;
     const init = {method:msg.method,headers:{'Content-Type':'application/json'}};
@@ -122,6 +122,7 @@ class PreviewServer:
                 web.get("/view/", self.index),
                 web.get("/view/style.css", self.asset),
                 web.get("/view/app.js", self.asset),
+                web.get("/view/issues.js", self.asset),
                 web.get("/bridge.js", self.bridge),
                 web.route("*", "/api/{endpoint}", self.dispatch),
             ]

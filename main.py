@@ -91,6 +91,8 @@ class GitHubBridge(Star):
 
     async def terminate(self):
         service = self.service
+        if self.panel:
+            self.panel.workbench.drafts.clear()
         self.service = None
         self.panel = None
         self.drafts.items.clear()

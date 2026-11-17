@@ -1,6 +1,6 @@
 # GitHub Bridge · AstrBot
 
-自动发现本人 GitHub 仓库，把 Commit、Release、Issue 和仓库变化汇总到管理员私聊。附 SukiSU-Ultra / KSU 风格管理页，以及 QQ issue 草稿确认入口。
+自动发现本人 GitHub 仓库，把 Commit、Release、Issue 和仓库变化汇总到管理员私聊。附 SukiSU-Ultra / KSU 风格中文工作台，可在 AstrBot 后台查看、创建、评论和关闭/重开 Issue，也支持 QQ issue 草稿确认。
 
 支持 AstrBot **4.29.4+**、Python **3.10+**。前端为随包附带的 HTML/CSS/JS，部署无需 Node、npm 或外部 CDN；管理页是 **AstrBot Dashboard 原生插件视图**，不开放独立端口，不需要单独口令，沿用 Dashboard 登录态。版本变更见 [更新日志](CHANGELOG.md)。
 
@@ -18,6 +18,7 @@
 | 首次静音与重试 | SQLite 基线与通知队列在同一事务提交；每轮上限；失败退避；重复导入幂等 |
 | 旧监控迁移 | Shell 插件的 `sent_notifications.json` 与 `failed_notifications.json`；过滤第三方仓库和群目标 |
 | QQ 反馈 bug | 允许列表、管理员私聊、完整草稿预览、15 分钟内确认发布；支持提取最近群文本 |
+| 中文问题工作台 | 后台查看 Issue 和评论、创建问题、回复评论、关闭/重开；每次写入前预览确认 |
 | 状态 / 配置 / 日志 | `/gh status`、`/gh config`、`/gh logs`，仅输出本插件脱敏信息 |
 | KSU UI | 绿色实底状态卡、扁平分组、玻璃悬浮导航；浅色/深色/系统/AMOLED；手机与桌面布局 |
 
@@ -33,6 +34,20 @@
 6. 首轮只建立基线。新仓库或重新启用的事件类型也会静音建基线。后续新增事件才推送；已明确导入的旧失败项会正常重试。
 
 Token 不预置；首次安装监控默认暂停。`monitor_enabled=false` 会在每次插件加载时将持久监控状态设为暂停；当前运行期间仍可通过管理页或 `/gh resume` 手动开启。`monitor_enabled=true` 则保留管理页最后保存的启用状态。检查进行中会拒绝同时改配置，请稍后重试。
+
+### 后台中文问题工作台
+
+在管理页底部打开 **“问题”**，选择自己的仓库即可查看问题列表、正文、标签和评论。可按待解决 / 已关闭 / 全部筛选，支持分页和本页关键词搜索；桌面显示仓库、列表和详情三栏，手机采用纵向布局。
+
+**直接添加 Issue：** 点击“＋ 新建问题”，填写标题和正文 → “预览并核对” → “确认发布”。回复评论和关闭 / 重开也会先生成预览，确认后才请求 GitHub。无需先开启自动监控或配置 QQ 私聊目标，只需保存 GitHub 用户名和 Token。
+
+- 查看只需 Token 的 Metadata / Issues 读取权限；写入需 **Issues: Read and write**，且仓库已加入设置页的 **“问题写入允许列表”**（与 QQ 创建 Issue 使用同一个 `issue_repositories` 配置）。列表默认为空，因此初始为只读。
+- 只支持配置账号名下、Token 可见且未被排除的仓库。已归档或未开启 Issues 的仓库不可写；Pull Request 不在本工作台范围内。
+- 正文支持输入 Markdown，但当前详情和预览按安全纯文本显示，不渲染 HTML、不自动载入外部图片；标签只读。
+- 每页查询最多 30 个 GitHub 条目并过滤 PR；仅搜索当前页。详情最多预览前 500 条评论（还受 `max_pages` 限制），截断时明确提示并提供原始链接。
+- 预览绑定当前 Dashboard 用户，10 分钟失效；确认一次即消费，重复点击、并发确认和网络失败都不会自动重放写请求。确认前后若 Token、账号或允许列表变化，预览失效。
+- 预览会隐藏常见凭据，请核对展示出的实际标题和正文；确认后提交的就是该预览内容。失败提示可能表示响应未到达，请先到 GitHub 检查结果，再重新操作。
+- 本轮提供简化的中文 Issue 工作流，不含代码编辑、仓库设置、分支、Pull Request 合并或 Git 客户端操作。受限 iframe 可能无法打开新窗口，可展开“复制链接”在浏览器访问。
 
 ### AI 更新总结
 
@@ -71,7 +86,7 @@ https://github.com/owner/repo/commit/...
 
 - Resource owner 选择本人；Repository access 选择 **All repositories** 才能自动覆盖新建私有仓库。选择仓库子集时，插件只能监控获授权部分。
 - 仅监控：**Metadata: Read-only、Contents: Read-only、Issues: Read-only**。
-- 需要 QQ 建 issue：将 **Issues** 改为 **Read and write**。
+- 需要 QQ 建 issue 或后台创建/评论/关闭重开：将 **Issues** 改为 **Read and write**。
 - 不需要 Administration、Actions 写权限，也不需要修改代码权限；先在 GitHub 仓库设置中启用 Issues。
 - 设置合理过期日期。使用 classic PAT 时，私有仓库通常需要 `repo`，权限更宽，优先使用 fine-grained Token。
 
