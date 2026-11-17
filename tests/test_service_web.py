@@ -90,6 +90,42 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(":FriendMessage:", self.sent[0][0])
         self.assertEqual(self.store.counts("test-owner")["sent"], 1)
 
+    async def test_queued_single_line_commit_has_one_subject_and_is_delivered_once(
+        self,
+    ):
+        cfg = self.settings.value
+        repo = self.service.client.repo
+        title = "fix: 修复提交通知重复标题"
+        url = "https://github.com/test-owner/demo/commit/" + "a" * 40
+        event = Event(
+            "commit:" + "a" * 40, repo["full_name"], "commit", title, title, url, ""
+        )
+        observation = Observation({"seen": True}, [event])
+        self.store.discover(cfg.identity, [repo])
+        self.assertEqual(
+            self.store.record(cfg.identity, cfg.target_umo, repo, observation), 1
+        )
+        self.assertEqual(
+            self.store.record(cfg.identity, cfg.target_umo, repo, observation), 0
+        )
+        # 重试已排队消息时 GitHub 可以离线，不需要重新采集或修改原始正文。
+        self.service.client.fail = True
+
+        await self.service.check()
+        await self.service.check()
+
+        self.assertEqual(
+            self.sent,
+            [
+                (
+                    cfg.target_umo,
+                    f"[GitHub · 代码提交]\n{repo['full_name']}\n{title}\n{url}",
+                )
+            ],
+        )
+        self.assertEqual(self.store.counts(cfg.identity)["sent"], 1)
+        self.assertEqual(self.store.events(cfg.identity, "sent")[0]["body"], title)
+
     async def test_failed_send_not_counted_as_delivered_and_retry_works_offline(self):
         async def failing_sender(target, content):
             raise RuntimeError("QQ offline unit-test-secret")

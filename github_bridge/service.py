@@ -234,8 +234,27 @@ class BridgeService:
             "legacy": "历史通知重试",
         }
         label = kinds.get(event["kind"], event["kind"])
-        body = event["body"][:1400]
-        return f"[GitHub · {label}]\n{event['repo']}\n{event['title'][:200]}\n{body}\n{event['url']}".strip()
+        title = event["title"]
+        body = event["body"]
+        if event["kind"] == "commit":
+            subject, _, details = body.partition("\n")
+            subject = subject.rstrip("\r")
+            # 兼容已落盘消息：采集器把提交首行同时放进 title 和 body。
+            # title 在采集时最多保留 300 字符，正文中的首行可能更长。
+            truncated_subject = (
+                len(title) == 300
+                and title.endswith("…")
+                and len(subject) > 300
+                and subject.startswith(title[:-1])
+            )
+            if subject == title.rstrip("\r") or truncated_subject:
+                body = details.lstrip("\r\n")
+        lines = [f"[GitHub · {label}]", event["repo"], title[:200]]
+        if body.strip():
+            lines.append(body[:1400])
+        if event["url"]:
+            lines.append(event["url"])
+        return "\n".join(lines).strip()
 
     def status(self) -> dict[str, Any]:
         cfg = self.settings.value
