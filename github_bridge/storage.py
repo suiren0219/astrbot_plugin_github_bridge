@@ -35,6 +35,13 @@ class Store:
                 manual_retry INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS events_queue ON events(owner,target,status,next_attempt);
+            CREATE TABLE IF NOT EXISTS event_summaries (
+                event_id INTEGER PRIMARY KEY, summary TEXT NOT NULL,
+                state TEXT NOT NULL, created_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS event_visibility (
+                event_id INTEGER PRIMARY KEY, private INTEGER
+            );
             CREATE TABLE IF NOT EXISTS legacy_seen (event_key TEXT PRIMARY KEY);
             CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS leases (name TEXT PRIMARY KEY, holder TEXT, expires REAL);
@@ -113,6 +120,7 @@ class Store:
         event: Event,
         status: str = "pending",
         ignore_legacy: bool = False,
+        private: bool | None = None,
     ) -> bool:
         keys = (event.key, *event.legacy_keys)
         if not ignore_legacy and any(
@@ -142,6 +150,9 @@ class Store:
             ),
         )
         if row.rowcount:
+            self.db.execute(
+                "INSERT INTO event_visibility VALUES(?,?)", (row.lastrowid, private)
+            )
             for alias in event.legacy_keys:
                 self.db.execute("INSERT OR IGNORE INTO legacy_seen VALUES(?)", (alias,))
         return bool(row.rowcount)
@@ -152,7 +163,13 @@ class Store:
         count = 0
         with self.db:
             for event in observation.events:
-                count += self._enqueue(owner, target, event)
+                private = repo.get("private")
+                count += self._enqueue(
+                    owner,
+                    target,
+                    event,
+                    private=private if type(private) is bool else None,
+                )
             self.db.execute(
                 """
                 UPDATE repositories SET snapshot=?,last_check=?,error='' WHERE owner=? AND id=?
@@ -221,6 +238,35 @@ class Store:
                 (owner, target, time.time(), limit),
             )
         ]
+
+    def summary(self, event_id: int) -> dict[str, Any] | None:
+        row = self.db.execute(
+            "SELECT summary,state FROM event_summaries WHERE event_id=?", (event_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def save_summary(self, event_id: int, text: str, state: str) -> None:
+        with self.db:
+            self.db.execute(
+                "INSERT OR REPLACE INTO event_summaries VALUES(?,?,?,?)",
+                (event_id, text, state, time.time()),
+            )
+
+    def is_public_event(self, event: dict[str, Any], owner: str) -> bool:
+        original = self.db.execute(
+            "SELECT private FROM event_visibility WHERE event_id=?", (event["id"],)
+        ).fetchone()
+        current = self.db.execute(
+            "SELECT payload FROM repositories WHERE owner=? AND full_name=? AND active=1",
+            (owner, event["repo"]),
+        ).fetchone()
+        # 未知可见性（例如升级前队列/旧监控导入）保守处理，避免私有内容进入模型。
+        return bool(
+            original
+            and original["private"] == 0
+            and current
+            and json.loads(current["payload"]).get("private") is False
+        )
 
     def mark_sending(self, event_id: int) -> None:
         with self.db:

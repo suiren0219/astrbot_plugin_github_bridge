@@ -1,4 +1,4 @@
-# AstrBot 开发 Wiki 对照审查 · 1.0.2
+# AstrBot 开发 Wiki 对照审查 · 1.1.0
 
 审查日期：2026-11-16；个人预设清理补充于 2026-11-17。接口基准固定为 AstrBot `v4.29.4`，不将“静态符合规范”视为真实宿主联调通过。
 
@@ -10,6 +10,16 @@
 - [插件发布](https://github.com/AstrBotDevs/AstrBot/blob/v4.29.4/docs/zh/dev/star/plugin-publish.md)：公开仓库、metadata 自动解析、包体积限制。
 - [Context 实现](https://github.com/AstrBotDevs/AstrBot/blob/v4.29.4/astrbot/core/star/context.py)：`register_web_api(route, handler, methods, desc)`，相同路由和方法替换已有注册。
 - [Web API 实现](https://github.com/AstrBotDevs/AstrBot/blob/v4.29.4/astrbot/api/web.py)：请求上下文、`body()`、`query.get(..., type=int)`、`json_response` 和 `error_response`。
+
+## 1.1.0 AI 总结补充
+
+- 复用官方 `Context.get_current_chat_provider_id(target_umo)` 与 `Context.llm_generate(chat_provider_id=..., prompt=..., system_prompt=...)`，读取 `completion_text`；接口已与官方 `v4.29.4` 源码核对。
+- 每条公开动态追加中文摘要，保留原文和链接；不传会话历史、不开放工具、不访问动态链接。输入截断并隐藏常见凭据，输出移除推理标签并限制长度。
+- 私有或可见性未知内容默认不调用模型；公开内容要求入队时和当前均明确为公开，私有内容需显式开启。
+- 摘要以独立 SQLite 表缓存，发送重试/重启复用；失败、空响应或超时降级为原始通知，短暂退避。生成阶段取消不把未发送消息标成发送中。
+- 管理页可保存总结开关、模型 ID、超时及私有内容选项；版本为 1.1.0。原有未提交的通知标题去重优化与更新日志一并保留。
+- 104 项测试通过，包含模型调用桩、实际超时取消、旧数据库兼容、缓存复用、可见性变化和配置持久化。受限 iframe 已验证新表单与模型 ID 保存。
+- 本轮未使用真实模型或 QQ；当前变更通过功能分支 PR 审查，是否发布以主分支和 PR 合并状态为准。
 
 ## 1.0.2 个人预设清理补充
 
@@ -42,7 +52,7 @@
 
 - `main.py` 使用 `Star`、`initialize()`、`terminate()` 和官方消息发送接口；命令内再次校验 AstrBot 管理员及私聊。
 - Web API 在官方示例使用的构造阶段注册，路径包含插件名；本版本 Context 不要求额外的注册归属绑定。未启动独立生产端口。
-- `metadata.yaml` 的名称、版本、仓库、最低 AstrBot 版本和平台声明齐全；包内版本统一为 `1.0.2`。
+- `metadata.yaml` 的名称、版本、仓库、最低 AstrBot 版本和平台声明齐全；包内版本统一为 `1.1.0`。
 - 配置 schema 声明的启动开关已被消费，说明与实际行为一致。
 - `StarTools.get_data_dir(PLUGIN_NAME)` 决定数据目录；设置和 SQLite 不写入插件源目录。
 - GitHub 网络使用 `aiohttp`；第三方依赖已在 `requirements.txt` 声明，没有 `requests` 同步网络调用。
@@ -52,7 +62,7 @@
 
 ## 已完成验证
 
-- **74 项 unittest 全部通过**，含 GitHub mock、存储、通知迁移、旧配置预设清理、QQ 命令、Web API、生命周期和打包测试。
+- **104 项 unittest 全部通过**，含 AI 摘要、通知格式、GitHub mock、存储、通知迁移、旧配置预设清理、QQ 命令、Web API、生命周期和打包测试。
 - `python -m ruff check .`、`python -m ruff format --check .`、`compileall` 和 `git diff --check`。
 - 浏览器加载的是生产 `views/dashboard`；宿主采用 `sandbox="allow-scripts allow-forms allow-downloads"`，没有 `allow-same-origin`。
 - 配置保存、首次加载、通知筛选、延迟响应竞态及检查排队后的刷新已在该 iframe 中验证。

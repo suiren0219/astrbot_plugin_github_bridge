@@ -18,11 +18,19 @@ Sender = Callable[[str, str], Awaitable[None]]
 
 class BridgeService:
     def __init__(
-        self, settings: SettingsStore, store: Store, sender: Sender, client_factory=None
+        self,
+        settings: SettingsStore,
+        store: Store,
+        sender: Sender,
+        client_factory=None,
+        summarizer=None,
     ):
         self.settings = settings
         self.store = store
         self.sender = sender
+        self.summarizer = summarizer
+        self.summary_warning = ""
+        self._summary_cooldown = 0.0
         if client_factory is None:
             from .github import GitHubClient
 
@@ -110,6 +118,12 @@ class BridgeService:
                 await self.client.close()
                 self.client = self.client_factory(value)
                 self.last_error = ""
+                if (
+                    value.ai_summary_enabled != previous.ai_summary_enabled
+                    or value.ai_summary_provider_id != previous.ai_summary_provider_id
+                ):
+                    self.summary_warning = ""
+                    self._summary_cooldown = 0.0
                 self._wake.set()
         return value.public()
 
@@ -184,10 +198,13 @@ class BridgeService:
                 for event in self.store.queue(
                     cfg.identity, cfg.target_umo, cfg.max_push_per_cycle
                 ):
+                    summary = await self.summarize_event(event)
                     self.store.mark_sending(event["id"])
                     try:
                         await asyncio.wait_for(
-                            self.sender(cfg.target_umo, self.format_event(event)),
+                            self.sender(
+                                cfg.target_umo, self.format_event(event, summary)
+                            ),
                             timeout=30,
                         )
                         self.store.mark_sent(event["id"])
@@ -222,8 +239,42 @@ class BridgeService:
             if not self.store.acquire(self._holder, ttl):
                 raise RuntimeError("轮询锁已丢失")
 
+    async def summarize_event(self, event: dict[str, Any]) -> str:
+        cfg = self.settings.value
+        if not cfg.ai_summary_enabled or self.summarizer is None:
+            return ""
+        if not cfg.ai_summary_private and not self.store.is_public_event(
+            event, cfg.identity
+        ):
+            return ""
+        cached = self.store.summary(event["id"])
+        if cached is not None:
+            return cached["summary"]
+        if time.time() < self._summary_cooldown:
+            return ""
+        try:
+            from .summary import clean_summary
+
+            text = await asyncio.wait_for(
+                self.summarizer(event, cfg), timeout=cfg.ai_summary_timeout
+            )
+            if not isinstance(text, str):
+                raise ValueError("模型未返回文本摘要")
+            text = clean_summary(text, cfg.github_token)
+        except Exception:
+            # 模型故障不影响原始通知；不回显供应商异常，防止其中包含请求和凭据。
+            self.summary_warning = (
+                "AI 总结暂不可用，已回退为原始通知；稍后会为新通知恢复尝试。"
+            )
+            self._summary_cooldown = time.time() + 60
+            self.store.save_summary(event["id"], "", "failed")
+            return ""
+        self.store.save_summary(event["id"], text, "ready")
+        self.summary_warning = ""
+        return text
+
     @staticmethod
-    def format_event(event: dict[str, Any]) -> str:
+    def format_event(event: dict[str, Any], summary: str = "") -> str:
         kinds = {
             "commit": "代码提交",
             "release": "新 Release",
@@ -234,8 +285,29 @@ class BridgeService:
             "legacy": "历史通知重试",
         }
         label = kinds.get(event["kind"], event["kind"])
-        body = event["body"][:1400]
-        return f"[GitHub · {label}]\n{event['repo']}\n{event['title'][:200]}\n{body}\n{event['url']}".strip()
+        title = event["title"]
+        body = event["body"]
+        if event["kind"] == "commit":
+            subject, _, details = body.partition("\n")
+            subject = subject.rstrip("\r")
+            # 兼容已落盘消息：采集器把提交首行同时放进 title 和 body。
+            # title 在采集时最多保留 300 字符，正文中的首行可能更长。
+            truncated_subject = (
+                len(title) == 300
+                and title.endswith("…")
+                and len(subject) > 300
+                and subject.startswith(title[:-1])
+            )
+            if subject == title.rstrip("\r") or truncated_subject:
+                body = details.lstrip("\r\n")
+        lines = [f"[GitHub · {label}]", event["repo"], title[:200]]
+        if body.strip():
+            lines.append(body[:1400])
+        if summary:
+            lines.append(f"\nAI 总结：{summary}")
+        if event["url"]:
+            lines.append(event["url"])
+        return "\n".join(lines).strip()
 
     def status(self) -> dict[str, Any]:
         cfg = self.settings.value
@@ -251,6 +323,8 @@ class BridgeService:
             "next_check": self.next_check,
             "last_error": self.last_error,
             "configuration_warning": self.settings.configuration_warning,
+            "ai_summary_enabled": cfg.ai_summary_enabled,
+            "summary_warning": self.summary_warning,
             "rate_limit": getattr(self.client, "rate_limit", {}),
             "cooldown_until": self.cooldown_until,
             "counts": self.store.counts(cfg.identity),

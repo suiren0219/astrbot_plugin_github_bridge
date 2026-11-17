@@ -11,6 +11,7 @@ from .github_bridge.panel import PanelAPI
 from .github_bridge.service import BridgeService
 from .github_bridge.settings import SettingsStore
 from .github_bridge.storage import Store
+from .github_bridge.summary import AstrBotSummarizer
 
 PLUGIN_NAME = "astrbot_plugin_github_bridge"
 
@@ -70,7 +71,12 @@ class GitHubBridge(Star):
         try:
             if not self.monitor_enabled:
                 settings.update({"enabled": False})
-            self.service = BridgeService(settings, store, self._send_private)
+            self.service = BridgeService(
+                settings,
+                store,
+                self._send_private,
+                summarizer=AstrBotSummarizer(self.context),
+            )
             self.panel = PanelAPI(self.service)
             await self.service.start()
             logger.info("GitHub Bridge 已启动；管理页由 AstrBot Dashboard 插件视图承载")
