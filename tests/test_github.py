@@ -260,6 +260,47 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(GitHubError, "max_pages"):
             await client._list("/user/repos")
 
+    async def test_repository_id_normalized_next_link_is_followed(self):
+        """GitHub 把 /repos/{owner}/{repo} 规范化为 /repositories/{id} 时应继续分页。"""
+        client = GitHubClient(Settings(max_pages=5))
+        current = API + "/repos/test-owner/demo/commits?per_page=100&sha=main"
+        canonical = (
+            API + "/repositories/1434457636/commits?per_page=100&sha=main&page=2"
+        )
+        next_url = client._next(f'<{canonical}>; rel="next"', current)
+        self.assertEqual(next_url, canonical)
+
+        # _pages 端到端：第一页由 /repos/... 发起，第二页跳到 /repositories/...。
+        first_url = API + "/repos/test-owner/demo/commits?per_page=100&sha=main"
+        client._request = AsyncMock(
+            side_effect=[
+                ([{"sha": "1"}], {"link": f'<{canonical}>; rel="next"'}),
+                ([{"sha": "2"}], {}),
+            ]
+        )
+        pages = [
+            page
+            async for page in client._pages(
+                "/repos/test-owner/demo/commits", {"sha": "main"}
+            )
+        ]
+        self.assertEqual(pages, [[{"sha": "1"}], [{"sha": "2"}]])
+        self.assertEqual(client._request.call_args_list[0].args[1], first_url)
+
+    async def test_cross_resource_paths_are_still_rejected(self):
+        client = GitHubClient(Settings())
+        current = API + "/repos/test-owner/demo/commits?per_page=100"
+        for target in (
+            API + "/repositories/1434457636/issues?per_page=100&page=2",
+            API + "/user/repos?per_page=100&page=2",
+            API + "/repos/other-owner/demo/commits?per_page=100&page=2",
+        ):
+            with (
+                self.subTest(target=target),
+                self.assertRaisesRegex(GitHubError, "分页路径改变"),
+            ):
+                client._next(f'<{target}>; rel="next"', current)
+
     async def test_foreign_links_loops_and_skipped_pages_are_rejected(self):
         client = GitHubClient(Settings())
         current = API + "/user/repos?per_page=100"
