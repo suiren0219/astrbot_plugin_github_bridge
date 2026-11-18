@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import re
 import secrets
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from astrbot.api import logger
+
 from . import __version__
 from .settings import SettingsStore
 from .storage import Store
 
-log = logging.getLogger(__name__)
 Sender = Callable[[str, str], Awaitable[None]]
 
 
@@ -90,7 +90,7 @@ class BridgeService:
                     await self.check()
                 except Exception as exc:
                     self.last_error = self.safe_error(exc)
-                    log.warning("GitHub Bridge 检查失败：%s", self.last_error)
+                    logger.warning("GitHub Bridge 检查失败：%s", self.last_error)
                 self.next_check = time.time() + delay
             else:
                 self.next_check = None
@@ -216,7 +216,7 @@ class BridgeService:
                 self.last_check = time.time()
                 self.store.set_meta("last_check", self.last_check)
                 self.last_error = "；".join(failures[:3])
-                log.info(
+                logger.info(
                     "GitHub Bridge CHECK queued=%d sent=%d failures=%d",
                     queued,
                     sent,

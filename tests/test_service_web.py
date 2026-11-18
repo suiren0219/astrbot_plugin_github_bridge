@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 from aiohttp.test_utils import TestClient, TestServer
+from astrbot.api import logger as astrbot_logger
 
 from github_bridge.models import Event, Observation
 from github_bridge.service import BridgeService
@@ -56,6 +57,16 @@ class FakeGitHub:
 
 
 class ServiceTests(unittest.IsolatedAsyncioTestCase):
+    def test_service_uses_astrbot_api_logger(self):
+        import inspect
+
+        import github_bridge.service as service_module
+
+        self.assertIs(service_module.logger, astrbot_logger)
+        source = inspect.getsource(service_module)
+        self.assertNotIn("import logging", source)
+        self.assertNotIn("logging.getLogger", source)
+
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
