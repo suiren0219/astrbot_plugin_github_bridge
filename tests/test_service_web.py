@@ -1,3 +1,4 @@
+import inspect
 import json
 import tempfile
 import time
@@ -57,9 +58,23 @@ class FakeGitHub:
 
 
 class ServiceTests(unittest.IsolatedAsyncioTestCase):
-    def test_service_uses_astrbot_api_logger(self):
-        import inspect
+    def test_preview_cli_starts_without_astrbot_host(self):
+        import subprocess
+        import sys
 
+        root = Path(__file__).resolve().parents[1]
+        result = subprocess.run(
+            [sys.executable, "tools/preview.py", "--help"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--port PORT", result.stdout)
+
+    def test_service_uses_astrbot_api_logger(self):
         import github_bridge.service as service_module
 
         self.assertIs(service_module.logger, astrbot_logger)

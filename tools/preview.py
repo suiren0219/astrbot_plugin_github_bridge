@@ -5,10 +5,32 @@ import asyncio
 import sys
 import tempfile
 import time
+import types
 from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+try:
+    import astrbot.api
+except ModuleNotFoundError as exc:
+    if exc.name not in {"astrbot", "astrbot.api"}:
+        raise
+    astrbot = types.ModuleType("astrbot")
+    api = types.ModuleType("astrbot.api")
+
+    class PreviewLogger:
+        def info(self, *args, **kwargs):
+            pass
+
+        warning = info
+        error = info
+        debug = info
+
+    api.logger = PreviewLogger()
+    astrbot.api = api
+    sys.modules["astrbot"] = astrbot
+    sys.modules["astrbot.api"] = api
 
 from github_bridge.models import Event, Observation
 from github_bridge.service import BridgeService

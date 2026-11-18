@@ -90,7 +90,7 @@ class BridgeService:
                     await self.check()
                 except Exception as exc:
                     self.last_error = self.safe_error(exc)
-                    logger.warning("GitHub Bridge 检查失败：%s", self.last_error)
+                    logger.warning(f"GitHub Bridge 检查失败：{self.last_error}")
                 self.next_check = time.time() + delay
             else:
                 self.next_check = None
@@ -217,10 +217,8 @@ class BridgeService:
                 self.store.set_meta("last_check", self.last_check)
                 self.last_error = "；".join(failures[:3])
                 logger.info(
-                    "GitHub Bridge CHECK queued=%d sent=%d failures=%d",
-                    queued,
-                    sent,
-                    len(failures),
+                    f"GitHub Bridge CHECK queued={queued} sent={sent} "
+                    f"failures={len(failures)}"
                 )
                 return {"queued": queued, "sent": sent}
             finally:
