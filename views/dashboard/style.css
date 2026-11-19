@@ -722,3 +722,113 @@ body:has(dialog[open]) { overflow: hidden; }
   .nav-item[aria-selected="true"], .filter-group button[aria-pressed="true"], .theme-options button[aria-pressed="true"] { outline: 2px solid Highlight; }
   .switch-thumb { background: ButtonText; }
 }
+
+/* 问题工作台：SukiSU 实底卡片与中文仓库／列表／详情。 */
+.floating-nav { width: 436px; }
+.issue-permission { display: flex; align-items: center; gap: 12px; padding: 16px 20px; margin-bottom: 14px; background: var(--hero); color: var(--hero-ink); border-radius: 24px; }
+.issue-permission > p { flex: 1; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.issue-permission > .tag { flex-shrink: 0; }
+.issue-feedback { flex-wrap: wrap; background: var(--primary-soft); color: var(--primary-ink); }
+.issue-feedback > .issue-external { flex-basis: 100%; }
+.issue-workspace { display: grid; grid-template-columns: minmax(170px, .72fr) minmax(270px, 1fr) minmax(0, 1.5fr); gap: 12px; align-items: start; }
+.issue-workspace > * { min-width: 0; }
+.issue-repositories, .issue-list-panel, .issue-detail-panel { padding: 18px; }
+.issue-workspace .section-heading { align-items: flex-start; margin-bottom: 16px; flex-wrap: wrap; }
+.issue-workspace .section-heading h2 { font-size: 16px; }
+.issue-repositories > .field { margin-bottom: 14px; }
+.issue-repositories .field label, .issue-list-panel .field label { font-size: 11px; color: var(--muted); }
+.issue-repositories input, .issue-list-panel input { padding: 11px 12px; font-size: 12px; min-width: 0; }
+.issue-repo-list { display: flex; flex-direction: column; gap: 3px; max-height: 640px; overflow-y: auto; overscroll-behavior: contain; margin: 0 -6px 12px; }
+.issue-repo-row { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; width: 100%; padding: 13px 12px; border-radius: 12px; text-align: left; color: var(--muted); }
+.issue-repo-row > strong { color: var(--ink); font-size: 12px; overflow-wrap: anywhere; }
+.issue-repo-description { font-size: 11px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.issue-repo-row[aria-pressed="true"] { background: var(--primary-soft); color: var(--primary-ink); }
+.issue-repo-row:hover:not([aria-pressed="true"]) { background: var(--surface-soft); }
+.issue-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.issue-tags .tag { white-space: normal; overflow-wrap: anywhere; max-width: 100%; }
+.issue-label-dot { display: inline-block; flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; }
+.issue-repo-name { overflow-wrap: anywhere; flex: 1; min-width: 100px; }
+.issue-list-panel .section-heading > .button { font-size: 11px; padding: 8px 12px; }
+.issue-filters { margin-bottom: 14px; }
+.issue-filters button { min-height: 38px; font-size: 12px; padding: 8px 12px; }
+.issue-list-panel > .field-hint { margin: 12px 0; }
+.issue-list { display: flex; flex-direction: column; gap: 3px; }
+.issue-row { display: flex; flex-direction: column; align-items: stretch; gap: 9px; padding: 16px 12px; width: 100%; border-radius: 12px; text-align: left; min-width: 0; background: var(--surface-soft); }
+.issue-row[aria-pressed="true"] { background: var(--primary-soft); }
+.issue-row:hover:not([aria-pressed="true"]) { background: var(--surface-high); }
+.issue-row-heading { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+.issue-row-title { font-size: 14px; font-weight: 600; line-height: 1.7; overflow-wrap: anywhere; }
+.issue-row-meta { color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
+.issue-pagination { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; padding-top: 18px; }
+.issue-pagination > span { color: var(--muted); font-size: 11px; }
+.issue-pagination > .button { padding: 8px 12px; }
+.issue-workspace .empty-state { padding: 32px 6px; }
+.issue-workspace .empty-state p { font-size: 12px; }
+.issue-workspace .empty-state h3 { font-size: 15px; }
+.issue-detail-panel { min-height: 360px; }
+.issue-detail-title { font-size: 22px; font-weight: 650; line-height: 1.6; overflow-wrap: anywhere; margin-bottom: 12px; }
+.issue-detail-panel > .issue-tags { margin: 9px 0; }
+.issue-detail-panel .field-hint { margin: 0; }
+.issue-source { white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; font-family: inherit; font-size: 14px; line-height: 1.9; background: var(--surface-soft); border-radius: 12px; padding: 16px; margin: 16px 0 10px; }
+.issue-external { min-width: 0; margin: 10px 0; }
+.issue-external > .text-link { font-size: 11px; }
+.issue-url { margin-top: 4px; color: var(--muted); font-size: 11px; }
+.issue-url > summary { cursor: pointer; min-height: 32px; width: fit-content; padding: 4px 0; }
+.issue-url-row { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 5px; }
+.issue-url-row > input { min-width: 0; flex: 1; font-size: 11px; min-height: 40px; padding: 8px 10px; }
+.issue-url-row > .button { flex-shrink: 0; }
+.issue-detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 20px 0 26px; }
+.issue-comments-heading { margin: 24px 0 14px; }
+.issue-comment { background: var(--surface-soft); border-radius: 18px; padding: 15px; margin: 12px 0; }
+.issue-comment-meta { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.issue-comment .issue-source { padding: 0; margin-top: 10px; }
+.issue-truncated { background: var(--warning-soft); color: var(--warning); font-size: 12px; border-radius: 12px; padding: 14px; margin-top: 14px; }
+.issue-comment-form { margin-top: 24px; }
+.issue-comment-form textarea { font-size: 14px; }
+.issue-comment-form > .button { margin-top: 14px; }
+.issue-comment-form .field-hint { margin-top: 8px; }
+.issue-dialog { width: min(680px, calc(100% - 40px)); }
+.issue-dialog .dialog-heading { gap: 20px; }
+.issue-dialog .dialog-heading > h2 { font-size: 24px; }
+.issue-dialog > .muted { font-size: 12px; overflow-wrap: anywhere; }
+.issue-write-form { margin-top: 24px; }
+.issue-write-form > .button { margin-top: 20px; }
+.issue-preview { margin-top: 22px; border-radius: 18px; background: var(--surface-soft); padding: 20px; overflow-wrap: anywhere; }
+.issue-preview > h3 { margin: 12px 0; font-size: 17px; }
+.issue-preview > .mono { font-size: 12px; color: var(--muted); }
+.issue-preview .issue-source { background: var(--surface); }
+.issue-dialog .dialog-footer { flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.issue-dialog .dialog-footer > .field-hint { flex: 1 1 100%; }
+@media (min-width: 1280px) {
+  .main-content:has(#page-issues:not([hidden])) { max-width: 1480px; }
+  .issue-workspace { grid-template-columns: minmax(190px, .7fr) minmax(300px, 1fr) minmax(0, 1.65fr); }
+}
+@media (max-width: 1000px) {
+  .issue-workspace { grid-template-columns: minmax(220px, 1fr) minmax(0, 1.35fr); }
+  .issue-repositories { grid-column: 1 / -1; }
+  .issue-repo-list { flex-direction: row; max-height: 220px; overflow: auto; margin-top: 12px; }
+  .issue-repo-row { flex: 0 0 220px; }
+  .issue-repositories > .field { margin-bottom: 0; }
+  .issue-permission { flex-wrap: wrap; }
+  .issue-permission > .text-link { margin-left: auto; }
+}
+@media (max-width: 640px) {
+  .floating-nav { width: 404px; max-width: calc(100% - 32px); }
+  .nav-item { padding: 6px; font-size: 10px; }
+  .issue-workspace { grid-template-columns: minmax(0, 1fr); }
+  .issue-repositories { grid-column: auto; }
+  .issue-repo-list { flex-direction: column; max-height: 240px; }
+  .issue-repo-row { flex: none; }
+  .issue-repositories, .issue-list-panel, .issue-detail-panel { padding: 18px; }
+  .issue-permission { padding: 16px; gap: 8px; }
+  .issue-permission > p { flex-basis: calc(100% - 60px); font-size: 11px; }
+  .issue-detail-title { font-size: 22px; }
+  .issue-repositories input, .issue-list-panel input, .issue-comment-form textarea { font-size: 16px; }
+  .issue-source { font-size: 14px; }
+  .issue-dialog { width: calc(100% - 24px); padding: 22px; }
+  .issue-dialog .dialog-footer > .button { width: auto; flex: 1; }
+}
+@media (forced-colors: active) {
+  .issue-row, .issue-repo-row, .issue-comment, .issue-permission { outline: 1px solid CanvasText; }
+  .issue-row[aria-pressed="true"], .issue-repo-row[aria-pressed="true"] { outline: 2px solid Highlight; }
+}

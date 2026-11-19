@@ -1,3 +1,4 @@
+import inspect
 import json
 import tempfile
 import time
@@ -6,6 +7,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 from aiohttp.test_utils import TestClient, TestServer
+from astrbot.api import logger as astrbot_logger
 
 from github_bridge.models import Event, Observation
 from github_bridge.service import BridgeService
@@ -56,6 +58,30 @@ class FakeGitHub:
 
 
 class ServiceTests(unittest.IsolatedAsyncioTestCase):
+    def test_preview_cli_starts_without_astrbot_host(self):
+        import subprocess
+        import sys
+
+        root = Path(__file__).resolve().parents[1]
+        result = subprocess.run(
+            [sys.executable, "tools/preview.py", "--help"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--port PORT", result.stdout)
+
+    def test_service_uses_astrbot_api_logger(self):
+        import github_bridge.service as service_module
+
+        self.assertIs(service_module.logger, astrbot_logger)
+        source = inspect.getsource(service_module)
+        self.assertNotIn("import logging", source)
+        self.assertNotIn("logging.getLogger", source)
+
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
@@ -176,9 +202,21 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             self.service.client.repo,
             Observation({"seen": True}, events),
         )
+        sent_while_sending = []
+
+        async def capture_sending(target, text):
+            sent_while_sending.extend(self.store.events(cfg.identity, "sending"))
+            self.sent.append((target, text))
+
+        self.service.sender = capture_sending
         await self.service.check()
-        self.assertEqual(len(self.sent), 5)
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(len(sent_while_sending), 5)
+        self.assertTrue(all(event["attempts"] == 1 for event in sent_while_sending))
         self.assertGreater(self.store.counts(cfg.identity)["pending"], 0)
+        self.assertEqual(self.store.counts(cfg.identity)["sent"], 5)
+        self.assertIn("[GitHub · 代码提交]", self.sent[0][1])
+        self.assertEqual(self.sent[0][1].count("[GitHub · 代码提交]"), 5)
 
     async def test_cooldown_stops_github_calls_but_drains_existing_queue(self):
         cfg = self.settings.value

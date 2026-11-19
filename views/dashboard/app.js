@@ -1,3 +1,5 @@
+import { createIssueWorkspace } from './issues.js';
+
 (() => {
   'use strict';
 
@@ -36,7 +38,7 @@
     mediaQuery: null,
   };
 
-  const PAGES = ['overview', 'repositories', 'events', 'settings'];
+  const PAGES = ['overview', 'repositories', 'events', 'settings', 'issues'];
   const EVENT_STATUSES = ['all', 'pending', 'sent', 'failed'];
   const REPO_FILTERS = ['all', 'private', 'archived', 'error'];
   const THEME_CHOICES = ['system', 'light', 'dark', 'amoled'];
@@ -44,7 +46,7 @@
   const IMPORT_FILE_LIMIT = 512 * 1024;
   const IMPORT_TOTAL_LIMIT = 2 * 1024 * 1024;
 
-  const PAGE_LABELS = { overview: '总览', repositories: '仓库', events: '推送', settings: '设置' };
+  const PAGE_LABELS = { overview: '总览', repositories: '仓库', events: '推送', settings: '设置', issues: '问题' };
   const PAGE_COPY = {
     overview: {
       eyebrow: 'WORKSPACE OVERVIEW',
@@ -60,6 +62,11 @@
       eyebrow: 'DELIVERY QUEUE',
       title: '每一条消息，都有去处',
       description: '查看推送状态，必要时把失败记录重新送入队列。',
+    },
+    issues: {
+      eyebrow: '问题工作台',
+      title: '从一个问题，推进下一步',
+      description: '在自己的仓库里查看、创建与讨论问题，每次写入都先确认。',
     },
     settings: {
       eyebrow: 'BRIDGE SETTINGS',
@@ -253,6 +260,16 @@
   function apiPost(path, body = {}) {
     return apiRequest(path, { method: 'POST', body });
   }
+
+  const issueWorkspace = createIssueWorkspace({
+    root: $('#page-issues'),
+    apiGet,
+    apiPost,
+    getSettings: () => state.settings,
+    getPreview: () => state.status?.preview === true,
+    redact,
+    announce,
+  });
 
   function announce(message) {
     text($('#announcer'), message);
@@ -496,7 +513,10 @@
       item.tabIndex = active ? 0 : -1;
     });
     document.title = `${PAGE_LABELS[safePage]} · GitHub Bridge`;
+    $('#page-check').hidden = safePage === 'issues';
+    if (safePage !== 'issues') issueWorkspace.deactivate();
     if (!state.authenticated) return;
+    if (safePage === 'issues') issueWorkspace.activate();
     if (safePage === 'repositories' && !state.repositoriesLoaded && !state.repositoriesError) loadRepositories();
     if (safePage === 'events' && !state.eventsLoaded && !state.eventsError) loadEvents(state.eventStatus);
     if (safePage === 'settings' && !state.settingsLoaded && !state.settingsError) loadSettings();
@@ -947,6 +967,7 @@
       applyStatus(state.status);
     }
     text($('#settings-version'), state.status && state.status.version ? `VERSION ${asString(state.status.version)}` : 'VERSION —');
+    issueWorkspace.settingsChanged();
   }
 
   function updateEnabledDescription() {
@@ -1244,6 +1265,7 @@
     try {
       await loadStatusOnly();
       await Promise.allSettled([loadRepositories(), loadEvents(state.eventStatus), loadSettings()]);
+      if (state.page === 'issues') await issueWorkspace.refresh();
       text($('#last-refreshed'), `刚刚同步 · ${formatDateTime(new Date().toISOString())}`);
       announce('面板数据已刷新');
     } catch (error) {

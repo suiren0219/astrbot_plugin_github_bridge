@@ -268,37 +268,114 @@ class Store:
             and json.loads(current["payload"]).get("private") is False
         )
 
-    def mark_sending(self, event_id: int) -> None:
-        with self.db:
-            self.db.execute(
-                "UPDATE events SET status='sending',attempts=attempts+1 WHERE id=?",
-                (event_id,),
-            )
+    @staticmethod
+    def _event_ids(event_ids: list[int]) -> list[int]:
+        unique = []
+        seen = set()
+        for event_id in event_ids:
+            if type(event_id) is not int or event_id < 1:
+                raise ValueError("通知 ID 必须是正整数")
+            if event_id not in seen:
+                unique.append(event_id)
+                seen.add(event_id)
+        return unique
 
-    def mark_sent(self, event_id: int) -> None:
+    def mark_sending_many(self, event_ids: list[int]) -> int:
+        ids = self._event_ids(event_ids)
+        if not ids:
+            return 0
+        placeholders = ",".join("?" for _ in ids)
         with self.db:
-            self.db.execute(
-                "UPDATE events SET status='sent',sent_at=?,last_error='' WHERE id=?",
-                (time.time(), event_id),
-            )
+            changed = self.db.execute(
+                f"""
+                UPDATE events SET status='sending',attempts=attempts+1
+                WHERE id IN ({placeholders})
+                    AND status IN ('pending','failed') AND manual_retry=0
+                """,
+                ids,
+            ).rowcount
+            if changed != len(ids):
+                raise RuntimeError("通知队列状态已改变，未能领取完整发送批次")
+        return changed
 
-    def mark_failed(self, event_id: int, error: str) -> None:
+    def mark_sent_many(self, event_ids: list[int]) -> int:
+        ids = self._event_ids(event_ids)
+        if not ids:
+            return 0
+        placeholders = ",".join("?" for _ in ids)
         with self.db:
-            row = self.db.execute(
-                "SELECT attempts FROM events WHERE id=?", (event_id,)
-            ).fetchone()
-            attempts = row[0] if row else 1
-            self.db.execute(
-                """
-                UPDATE events SET status='failed',last_error=?,next_attempt=?,manual_retry=? WHERE id=?
-            """,
+            changed = self.db.execute(
+                f"""
+                UPDATE events SET status='sent',sent_at=?,last_error=''
+                WHERE id IN ({placeholders}) AND status='sending'
+                """,
+                [time.time(), *ids],
+            ).rowcount
+            if changed != len(ids):
+                raise RuntimeError("通知队列状态已改变，未能完整记录发送成功")
+        return changed
+
+    def mark_failed_many(self, event_ids: list[int], error: str) -> int:
+        ids = self._event_ids(event_ids)
+        if not ids:
+            return 0
+        placeholders = ",".join("?" for _ in ids)
+        now = time.time()
+        with self.db:
+            rows = self.db.execute(
+                f"""
+                SELECT id,attempts FROM events
+                WHERE id IN ({placeholders}) AND status='sending'
+                """,
+                ids,
+            ).fetchall()
+            if len(rows) != len(ids):
+                raise RuntimeError("通知队列状态已改变，未能完整记录发送失败")
+            updates = [
                 (
                     error[:500],
-                    time.time() + min(3600, 30 * 2 ** min(attempts, 7)),
-                    int(attempts >= 8),
-                    event_id,
-                ),
-            )
+                    now + min(3600, 30 * 2 ** min(row["attempts"], 7)),
+                    int(row["attempts"] >= 8),
+                    row["id"],
+                )
+                for row in rows
+            ]
+            changed = self.db.executemany(
+                """
+                UPDATE events SET status='failed',last_error=?,next_attempt=?,manual_retry=?
+                WHERE id=? AND status='sending'
+                """,
+                updates,
+            ).rowcount
+            if changed != len(ids):
+                raise RuntimeError("通知队列状态已改变，未能完整记录发送失败")
+        return changed
+
+    def mark_unknown_many(self, event_ids: list[int], error: str) -> int:
+        ids = self._event_ids(event_ids)
+        if not ids:
+            return 0
+        placeholders = ",".join("?" for _ in ids)
+        with self.db:
+            changed = self.db.execute(
+                f"""
+                UPDATE events SET status='failed',last_error=?,next_attempt=0,manual_retry=1
+                WHERE id IN ({placeholders}) AND status='sending'
+                """,
+                [error[:500], *ids],
+            ).rowcount
+            if changed != len(ids):
+                raise RuntimeError("通知队列状态已改变，未能隔离送达状态未知的批次")
+        return changed
+
+    def mark_sending(self, event_id: int) -> None:
+        self.mark_sending_many([event_id])
+
+    def mark_sent(self, event_id: int) -> None:
+        self.mark_sent_many([event_id])
+
+    def mark_failed(self, event_id: int, error: str) -> None:
+        self.mark_failed_many([event_id], error)
 
     def retry(self, owner: str, target: str, event_id: int | None = None) -> int:
         sql = "UPDATE events SET status='pending',manual_retry=0,next_attempt=0,attempts=0 WHERE owner=? AND target=? AND status='failed'"

@@ -1,19 +1,21 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import re
 import secrets
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from astrbot.api import logger
+
 from . import __version__
 from .settings import SettingsStore
 from .storage import Store
 
-log = logging.getLogger(__name__)
 Sender = Callable[[str, str], Awaitable[None]]
+MAX_NOTIFICATION_CHARS = 3500
+NOTIFICATION_SEPARATOR = "\n\n──────────\n\n"
 
 
 class BridgeService:
@@ -46,7 +48,6 @@ class BridgeService:
         self._wake = asyncio.Event()
         self._task: asyncio.Task | None = None
         self._closed = False
-        self._recovered = False
         self._check_lock = asyncio.Lock()
 
     def safe_error(self, error: Exception) -> str:
@@ -90,7 +91,7 @@ class BridgeService:
                     await self.check()
                 except Exception as exc:
                     self.last_error = self.safe_error(exc)
-                    log.warning("GitHub Bridge 检查失败：%s", self.last_error)
+                    logger.warning(f"GitHub Bridge 检查失败：{self.last_error}")
                 self.next_check = time.time() + delay
             else:
                 self.next_check = None
@@ -165,9 +166,9 @@ class BridgeService:
             failures = []
             heartbeat = asyncio.create_task(self._heartbeat(lease_ttl))
             try:
-                if not self._recovered:
-                    self.store.recover_interrupted()
-                    self._recovered = True
+                # Any sending rows held from an earlier interrupted attempt are
+                # delivery-unknown; never leave them stranded in this instance.
+                self.store.recover_interrupted()
                 try:
                     if time.time() < self.cooldown_until:
                         raise RuntimeError(
@@ -195,32 +196,68 @@ class BridgeService:
                     failures.append(self.safe_error(exc))
                     self._rate_error(exc)
                 # GitHub 暂时不可用也继续投递已落盘通知。
-                for event in self.store.queue(
+                events = self.store.queue(
                     cfg.identity, cfg.target_umo, cfg.max_push_per_cycle
-                ):
-                    summary = await self.summarize_event(event)
-                    self.store.mark_sending(event["id"])
+                )
+                batches = await self._notification_batches(events)
+                for parts, message_events in batches:
+                    event_ids = [event["id"] for event in message_events]
+                    self.store.mark_sending_many(event_ids)
+                    sent_parts = 0
                     try:
-                        await asyncio.wait_for(
-                            self.sender(
-                                cfg.target_umo, self.format_event(event, summary)
-                            ),
-                            timeout=30,
+                        for message in parts:
+                            await asyncio.wait_for(
+                                self.sender(cfg.target_umo, message),
+                                timeout=30,
+                            )
+                            sent_parts += 1
+                    except asyncio.CancelledError:
+                        self._mark_delivery_unknown(
+                            event_ids,
+                            "发送期间任务被取消，送达状态未知。请核对私聊后手动重试。",
                         )
-                        self.store.mark_sent(event["id"])
-                        sent += 1
+                        raise
                     except Exception as exc:
                         error = self.safe_error(exc)
-                        self.store.mark_failed(event["id"], error)
+                        try:
+                            if sent_parts or isinstance(exc, asyncio.TimeoutError):
+                                self.store.mark_unknown_many(
+                                    event_ids,
+                                    "消息发送部分成功或超时，送达状态未知。请核对私聊后手动重试。",
+                                )
+                            else:
+                                self.store.mark_failed_many(event_ids, error)
+                        except Exception as mark_exc:
+                            self._mark_delivery_unknown(
+                                event_ids,
+                                "发送失败且本地记录异常，送达状态未知。请核对私聊后手动重试。",
+                                mark_exc,
+                            )
+                            raise
                         failures.append(f"私聊发送失败：{error}")
+                        if sent_parts or isinstance(exc, asyncio.TimeoutError):
+                            break
+                    else:
+                        try:
+                            self.store.mark_sent_many(event_ids)
+                        except Exception as exc:
+                            # QQ 已返回成功，禁止把记账故障转换为自动重试。
+                            self._mark_delivery_unknown(
+                                event_ids,
+                                "QQ 已接受消息但本地记账失败，送达状态未知。请核对私聊后手动处理。",
+                                exc,
+                            )
+                            raise RuntimeError(
+                                "QQ 已接受通知，但本地发送状态记录失败"
+                            ) from None
+                        sent += len(message_events)
+
                 self.last_check = time.time()
                 self.store.set_meta("last_check", self.last_check)
                 self.last_error = "；".join(failures[:3])
-                log.info(
-                    "GitHub Bridge CHECK queued=%d sent=%d failures=%d",
-                    queued,
-                    sent,
-                    len(failures),
+                logger.info(
+                    f"GitHub Bridge CHECK queued={queued} sent={sent} "
+                    f"failures={len(failures)}"
                 )
                 return {"queued": queued, "sent": sent}
             finally:
@@ -233,6 +270,75 @@ class BridgeService:
                     self.store.release(self._holder)
                     self.running = False
 
+    async def _notification_batches(
+        self, events: list[dict[str, Any]]
+    ) -> list[tuple[str, list[dict[str, Any]]]]:
+        rendered: list[tuple[str, dict[str, Any]]] = []
+        for event in events:
+            summary = await self.summarize_event(event)
+            rendered.append((self.format_event(event, summary), event))
+
+        batches: list[tuple[list[str], list[dict[str, Any]]]] = []
+        current_text: list[str] = []
+        current_events: list[dict[str, Any]] = []
+        current_length = 0
+        for text, event in rendered:
+            separator_length = len(NOTIFICATION_SEPARATOR) if current_text else 0
+            if len(text) > MAX_NOTIFICATION_CHARS:
+                if current_text:
+                    batches.append(
+                        ([NOTIFICATION_SEPARATOR.join(current_text)], current_events)
+                    )
+                    current_text, current_events, current_length = [], [], 0
+                batches.append((self._split_notification(text), [event]))
+                continue
+
+            addition = len(text) + separator_length
+            if current_text and current_length + addition > MAX_NOTIFICATION_CHARS:
+                batches.append(
+                    ([NOTIFICATION_SEPARATOR.join(current_text)], current_events)
+                )
+                current_text, current_events, current_length = [], [], 0
+                addition = len(text)
+            current_text.append(text)
+            current_events.append(event)
+            current_length += addition
+        if current_text:
+            batches.append(
+                ([NOTIFICATION_SEPARATOR.join(current_text)], current_events)
+            )
+        return batches
+
+    @staticmethod
+    def _split_notification(text: str) -> list[str]:
+        # Preserve every character, including AI summary and URL, when one event
+        # alone exceeds the platform-safe message budget.
+        pieces: list[str] = []
+        remaining = text
+        while len(remaining) > MAX_NOTIFICATION_CHARS:
+            boundary = remaining.rfind("\n", 0, MAX_NOTIFICATION_CHARS)
+            if boundary < 0:
+                boundary = MAX_NOTIFICATION_CHARS
+            else:
+                boundary += 1
+            pieces.append(remaining[:boundary])
+            remaining = remaining[boundary:]
+        if remaining:
+            pieces.append(remaining)
+        return pieces
+
+    def _mark_delivery_unknown(
+        self, event_ids: list[int], message: str, cause: Exception | None = None
+    ) -> None:
+        try:
+            self.store.mark_unknown_many(event_ids, message)
+        except Exception as exc:
+            logger.error(
+                f"GitHub Bridge 无法隔离送达状态未知的批次：{self.safe_error(exc)}"
+            )
+            if cause is not None:
+                raise RuntimeError("通知送达状态未知且无法更新本地队列") from cause
+
     async def _heartbeat(self, ttl: int) -> None:
         while True:
             await asyncio.sleep(30)
@@ -241,6 +347,12 @@ class BridgeService:
 
     async def summarize_event(self, event: dict[str, Any]) -> str:
         cfg = self.settings.value
+        if event.get("kind") == "metadata":
+            from .summary import metadata_summary
+
+            text = metadata_summary(event)
+            self.store.save_summary(event["id"], text, "ready")
+            return text
         if not cfg.ai_summary_enabled or self.summarizer is None:
             return ""
         if not cfg.ai_summary_private and not self.store.is_public_event(

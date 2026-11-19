@@ -135,6 +135,35 @@ class GitHubClient:
             raise GitHubError("拒绝不安全的 GitHub API 地址") from None
         return url
 
+    @staticmethod
+    def _same_path(old: str, new: str) -> bool:
+        """判断 GitHub 分页前后的路径是否指向同一资源。
+
+        GitHub 在分页 Link 中会把 ``/repos/{owner}/{repo}/...`` 规范化成
+        ``/repositories/{id}/...``（仓库改名后尤其常见），二者是同一资源。
+        仅当一方为 /repositories/ 形式时才把仓库根段视为等价，仓库根段之后
+        的子路径仍须逐段一致（大小写不敏感）；其余情况要求路径逐段一致。
+        """
+        old_parts = [p.casefold() for p in unquote(old).split("/") if p]
+        new_parts = [p.casefold() for p in unquote(new).split("/") if p]
+
+        def root_and_suffix(parts: list[str]) -> tuple[str | None, list[str]]:
+            if parts[:1] == ["repos"] and len(parts) >= 3:
+                return "repo", parts[3:]
+            if parts[:1] == ["repositories"] and len(parts) >= 2:
+                return "repo", parts[2:]
+            return None, parts
+
+        old_root, old_suffix = root_and_suffix(old_parts)
+        new_root, new_suffix = root_and_suffix(new_parts)
+        if old_root != new_root:
+            return False
+        if old_root is not None and (
+            old_parts[:1] == ["repositories"] or new_parts[:1] == ["repositories"]
+        ):
+            return old_suffix == new_suffix
+        return old_parts == new_parts
+
     def _next(self, link: str, current: str) -> str | None:
         if not link:
             return None
@@ -153,7 +182,7 @@ class GitHubClient:
             return None
         target = targets[0]
         old, new = urlsplit(current), urlsplit(target)
-        if old.path != new.path:
+        if not self._same_path(old.path, new.path):
             raise GitHubError("GitHub 分页路径改变，拒绝继续")
         before, after = parse_qs(old.query), parse_qs(new.query)
         try:
