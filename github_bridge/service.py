@@ -347,6 +347,12 @@ class BridgeService:
 
     async def summarize_event(self, event: dict[str, Any]) -> str:
         cfg = self.settings.value
+        if event.get("kind") == "metadata":
+            from .summary import metadata_summary
+
+            text = metadata_summary(event)
+            self.store.save_summary(event["id"], text, "ready")
+            return text
         if not cfg.ai_summary_enabled or self.summarizer is None:
             return ""
         if not cfg.ai_summary_private and not self.store.is_public_event(

@@ -11,7 +11,12 @@ from github_bridge.models import Event, Observation
 from github_bridge.service import BridgeService
 from github_bridge.settings import Settings, SettingsStore
 from github_bridge.storage import Store
-from github_bridge.summary import AstrBotSummarizer, clean_summary, summary_prompt
+from github_bridge.summary import (
+    AstrBotSummarizer,
+    clean_summary,
+    metadata_summary,
+    summary_prompt,
+)
 from tests.test_service_web import FakeGitHub
 
 
@@ -80,6 +85,26 @@ class SummaryAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(len(prompt), 4500)
         self.assertIsInstance(json.loads(prompt.split("\n", 1)[1]), dict)
 
+    def test_metadata_summary_does_not_infer_new_issues_from_count(self):
+        event = {
+            "kind": "metadata",
+            "body": json.dumps(
+                {
+                    "open_issues_count": {"before": 8, "after": 9},
+                    "stargazers_count": {"before": 1, "after": 2},
+                },
+                ensure_ascii=False,
+            ),
+        }
+        result = metadata_summary(event)
+        self.assertIn("未关闭议题计数从 8 变为 9", result)
+        self.assertIn("可能包含未关闭 PR", result)
+        self.assertIn("无法判断新增了多少 Issue", result)
+        self.assertNotIn("新增 1 个 Issue", result)
+
+    def test_metadata_summary_handles_invalid_payload_without_model(self):
+        self.assertIn("仓库信息变化", metadata_summary({"body": "not-json"}))
+
     def test_summary_is_bounded_and_reasoning_is_removed(self):
         result = clean_summary(
             "<think>不应推送的推理</think>\n实际总结 fake-secret token=private-value",
@@ -95,6 +120,46 @@ class SummaryAdapterTests(unittest.IsolatedAsyncioTestCase):
 
 
 class SummaryQueueTests(unittest.IsolatedAsyncioTestCase):
+    async def test_metadata_event_uses_truthful_deterministic_summary(self):
+        temp = tempfile.TemporaryDirectory()
+        root = Path(temp.name)
+        settings = SettingsStore(
+            root,
+            {
+                "github_owner": "test-owner",
+                "github_token": "fake-secret",
+                "target_umo": "qq:FriendMessage:123",
+                "enabled": True,
+            },
+        )
+        store = Store(root / "bridge.sqlite3")
+        summarizer = AsyncMock(side_effect=AssertionError("metadata uses no LLM"))
+        service = BridgeService(settings, store, AsyncMock(), FakeGitHub, summarizer)
+        event = {
+            "id": 99,
+            "kind": "metadata",
+            "repo": "test-owner/demo",
+            "title": "仓库信息变化",
+            "body": json.dumps(
+                {"open_issues_count": {"before": 8, "after": 9}},
+                ensure_ascii=False,
+            ),
+            "url": "https://github.com/test-owner/demo",
+        }
+        try:
+            first = await service.summarize_event(event)
+            store.save_summary(event["id"], "旧的模型猜测了新增 Issue", "ready")
+            second = await service.summarize_event(event)
+            self.assertEqual(first, second)
+            self.assertIn("未关闭议题计数从 8 变为 9", second)
+            self.assertIn("可能包含未关闭 PR", second)
+            self.assertIn("无法判断新增了多少 Issue", second)
+            summarizer.assert_not_awaited()
+            self.assertEqual(store.summary(event["id"])["summary"], second)
+        finally:
+            await service.close()
+            temp.cleanup()
+
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
