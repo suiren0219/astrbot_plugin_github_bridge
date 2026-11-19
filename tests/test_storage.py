@@ -1,3 +1,4 @@
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -66,6 +67,64 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(self.store.queue("other", self.target, 5), [])
         self.assertEqual(self.store.queue("owner", "platform:FriendMessage:2", 5), [])
 
+    def test_batch_status_updates_are_atomic_and_deduplicate_ids(self):
+        self.store.record(
+            "owner",
+            self.target,
+            self.repo,
+            Observation({}, [self.event("one"), self.event("two")]),
+        )
+        ids = [row["id"] for row in self.store.queue("owner", self.target, 5)]
+        self.assertEqual(self.store.mark_sending_many([ids[0], ids[1], ids[0]]), 2)
+        self.assertEqual(self.store.mark_sent_many(ids), 2)
+        events = self.store.events("owner", "sent")
+        self.assertEqual(len(events), 2)
+        self.assertEqual(events[0]["sent_at"], events[1]["sent_at"])
+
+    def test_batch_update_rolls_back_on_trigger_failure(self):
+        self.store.record(
+            "owner",
+            self.target,
+            self.repo,
+            Observation({}, [self.event("one"), self.event("two")]),
+        )
+        ids = [row["id"] for row in self.store.queue("owner", self.target, 5)]
+        self.store.db.execute(
+            f"""
+            CREATE TRIGGER fail_second_sending BEFORE UPDATE OF status ON events
+            WHEN NEW.id={ids[1]} AND NEW.status='sending'
+            BEGIN SELECT RAISE(ABORT, 'injected batch failure'); END
+            """
+        )
+        self.store.db.commit()
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.store.mark_sending_many(ids)
+        statuses = [event["status"] for event in self.store.events("owner")]
+        self.assertEqual(statuses, ["pending", "pending"])
+        self.assertEqual(
+            [event["attempts"] for event in self.store.events("owner")], [0, 0]
+        )
+
+    def test_batch_failed_uses_each_attempt_count_and_unknown_requires_manual_retry(
+        self,
+    ):
+        self.store.record(
+            "owner",
+            self.target,
+            self.repo,
+            Observation({}, [self.event("one"), self.event("two")]),
+        )
+        ids = [row["id"] for row in self.store.queue("owner", self.target, 5)]
+        self.store.mark_sending_many(ids)
+        self.assertEqual(self.store.mark_failed_many(ids, "offline"), 2)
+        with self.assertRaises(ValueError):
+            self.store.mark_sending_many([ids[0], 0])
+        self.store.retry("owner", self.target)
+        self.store.mark_sending_many(ids)
+        self.assertEqual(self.store.mark_unknown_many(ids, "unknown"), 2)
+        self.assertEqual(self.store.queue("owner", self.target, 5), [])
+        self.assertEqual(self.store.retry("owner", self.target), 2)
+
     def test_failure_backoff_manual_retry_and_interrupted_delivery(self):
         self.store.record(
             "owner", self.target, self.repo, Observation({}, [self.event()])
@@ -79,6 +138,7 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(self.store.recover_interrupted(), 1)
         self.assertEqual(self.store.queue("owner", self.target, 5), [])
         self.store.retry("owner", self.target, event_id)
+        self.store.mark_sending(event_id)
         self.store.mark_sent(event_id)
         self.assertEqual(self.store.retry("owner", self.target), 0)
         self.assertEqual(self.store.counts("owner")["sent"], 1)

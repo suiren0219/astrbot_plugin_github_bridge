@@ -280,9 +280,128 @@ class SummaryQueueTests(unittest.IsolatedAsyncioTestCase):
         self.summarizer.side_effect = RuntimeError("offline")
         await self.service.check()
         self.summarizer.assert_awaited_once()
-        self.assertEqual(self.sender.await_count, 2)
+        self.assertEqual(self.sender.await_count, 1)
+        message = self.sender.call_args.args[1]
+        self.assertEqual(message.count("[GitHub · 代码提交]"), 2)
 
-    async def test_cancellation_during_generation_keeps_notification_pending(self):
+    async def test_multiple_summaries_are_kept_in_one_merged_message(self):
+        first_id = self.enqueue("event-1")
+        self.enqueue("event-2")
+        self.summarizer.side_effect = ["第一条摘要", "第二条摘要"]
+
+        await self.service.check()
+
+        self.assertEqual(self.summarizer.await_count, 2)
+        self.assertEqual(self.sender.await_count, 1)
+        message = self.sender.call_args.args[1]
+        self.assertLess(message.index("第一条摘要"), message.index("第二条摘要"))
+        self.assertEqual(message.count("https://github.com/test-owner/demo"), 2)
+        self.assertEqual(self.store.counts("test-owner")["sent"], 2)
+        self.assertEqual(self.store.summary(first_id)["summary"], "第一条摘要")
+
+    async def test_failed_merged_batch_retries_once_and_reuses_summaries(self):
+        self.enqueue("event-1")
+        self.enqueue("event-2")
+        self.summarizer.side_effect = ["第一条摘要", "第二条摘要"]
+        self.sender.side_effect = RuntimeError("QQ offline")
+
+        await self.service.check()
+        failed = self.store.events("test-owner", "failed")
+        self.assertEqual(len(failed), 2)
+        self.assertEqual(self.sender.await_count, 1)
+
+        self.store.retry("test-owner", self.settings.value.target_umo)
+        self.sender.side_effect = None
+        await self.service.check()
+
+        self.assertEqual(self.summarizer.await_count, 2)
+        self.assertEqual(self.sender.await_count, 2)
+        message = self.sender.call_args.args[1]
+        self.assertIn("第一条摘要", message)
+        self.assertIn("第二条摘要", message)
+        self.assertEqual(self.store.counts("test-owner")["sent"], 2)
+
+    async def test_successful_send_with_batch_mark_failure_is_not_auto_retried(self):
+        self.enqueue("event-1")
+        self.enqueue("event-2")
+        original_mark_sent = self.store.mark_sent_many
+
+        def fail_mark_sent(event_ids):
+            return (_ for _ in ()).throw(RuntimeError("simulated sqlite commit error"))
+
+        self.store.mark_sent_many = fail_mark_sent
+        with self.assertRaisesRegex(RuntimeError, "本地发送状态记录失败"):
+            await self.service.check()
+        self.assertEqual(self.sender.await_count, 1)
+        rows = self.store.events("test-owner", "failed")
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(event["manual_retry"] for event in rows))
+
+        self.store.mark_sent_many = original_mark_sent
+        await self.service.check()
+        self.assertEqual(self.sender.await_count, 1)
+        rows = self.store.events("test-owner", "failed")
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(event["manual_retry"] for event in rows))
+        self.assertEqual(self.store.recover_interrupted(), 0)
+
+    async def test_each_merged_group_is_accounted_independently(self):
+        for index in range(5):
+            self.enqueue(f"group-{index}")
+        with self.store.db:
+            self.store.db.execute(
+                "UPDATE events SET body=? WHERE owner=?",
+                ("详细内容" * 800, "test-owner"),
+            )
+        self.sender.side_effect = [None, RuntimeError("middle group failed"), None]
+
+        await self.service.check()
+
+        self.assertEqual(self.sender.await_count, 3)
+        self.assertEqual(
+            [
+                call.args[1].count("[GitHub · 代码提交]")
+                for call in self.sender.call_args_list
+            ],
+            [2, 2, 1],
+        )
+        rows = self.store.events("test-owner")
+        self.assertEqual(sum(event["status"] == "sent" for event in rows), 3)
+        self.assertEqual(sum(event["status"] == "failed" for event in rows), 2)
+
+    async def test_split_event_partial_send_becomes_manual_only(self):
+        self.enqueue("oversized")
+        original = BridgeService.format_event
+
+        def oversized(event, summary=""):
+            return original(event, summary) + "详细内容。" * 1300
+
+        self.service.format_event = oversized
+        self.sender.side_effect = [None, RuntimeError("second part failed")]
+
+        await self.service.check()
+
+        self.assertEqual(self.sender.await_count, 2)
+        failed = self.store.events("test-owner", "failed")
+        self.assertEqual(len(failed), 1)
+        self.assertTrue(failed[0]["manual_retry"])
+        self.assertIn("部分成功", failed[0]["last_error"])
+
+    async def test_cancellation_during_sender_becomes_manual_only(self):
+        self.enqueue("cancel-send")
+        self.sender.side_effect = asyncio.CancelledError()
+
+        with self.assertRaises(asyncio.CancelledError):
+            await self.service.check()
+
+        self.sender.assert_awaited_once()
+        failed = self.store.events("test-owner", "failed")
+        self.assertEqual(len(failed), 1)
+        self.assertTrue(failed[0]["manual_retry"])
+        self.assertIn("发送期间任务被取消", failed[0]["last_error"])
+        self.assertFalse(self.service.running)
+
+    async def test_cancellation_during_summary_keeps_event_pending(self):
         event_id = self.enqueue()
         self.summarizer.side_effect = asyncio.CancelledError()
         with self.assertRaises(asyncio.CancelledError):

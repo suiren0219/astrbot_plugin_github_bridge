@@ -202,9 +202,21 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             self.service.client.repo,
             Observation({"seen": True}, events),
         )
+        sent_while_sending = []
+
+        async def capture_sending(target, text):
+            sent_while_sending.extend(self.store.events(cfg.identity, "sending"))
+            self.sent.append((target, text))
+
+        self.service.sender = capture_sending
         await self.service.check()
-        self.assertEqual(len(self.sent), 5)
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(len(sent_while_sending), 5)
+        self.assertTrue(all(event["attempts"] == 1 for event in sent_while_sending))
         self.assertGreater(self.store.counts(cfg.identity)["pending"], 0)
+        self.assertEqual(self.store.counts(cfg.identity)["sent"], 5)
+        self.assertIn("[GitHub · 代码提交]", self.sent[0][1])
+        self.assertEqual(self.sent[0][1].count("[GitHub · 代码提交]"), 5)
 
     async def test_cooldown_stops_github_calls_but_drains_existing_queue(self):
         cfg = self.settings.value

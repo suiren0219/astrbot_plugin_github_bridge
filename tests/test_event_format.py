@@ -1,6 +1,10 @@
+import asyncio
 import unittest
 
-from github_bridge.service import BridgeService
+from github_bridge.service import (
+    MAX_NOTIFICATION_CHARS,
+    BridgeService,
+)
 
 
 class EventFormatTests(unittest.TestCase):
@@ -116,3 +120,82 @@ class EventFormatTests(unittest.TestCase):
             BridgeService.format_event(event).splitlines(),
             ["[GitHub · 代码提交]", event["repo"], title, detail[:1400], event["url"]],
         )
+
+    def test_batches_preserve_order_and_respect_message_length(self):
+        service = object.__new__(BridgeService)
+        events = []
+        for index in range(7):
+            events.append(
+                {
+                    "id": index + 1,
+                    "repo": "test-owner/demo",
+                    "kind": "commit",
+                    "title": f"提交 {index}",
+                    "body": f"说明 {index}",
+                    "url": f"https://github.com/test-owner/demo/commit/{index}",
+                }
+            )
+
+        async def summarize_event(event):
+            return f"摘要 {event['id']}"
+
+        service.summarize_event = summarize_event
+
+        batches = asyncio.run(service._notification_batches(events))
+        self.assertEqual(
+            [event["id"] for _, group in batches for event in group],
+            list(range(1, 8)),
+        )
+        self.assertEqual(len(batches), 1)
+        self.assertEqual(len(batches[0][0]), 1)
+        self.assertLessEqual(len(batches[0][0][0]), MAX_NOTIFICATION_CHARS)
+        for index in range(7):
+            self.assertIn(f"摘要 {index + 1}", batches[0][0][0])
+
+    def test_event_groups_are_split_at_character_budget(self):
+        service = object.__new__(BridgeService)
+        events = [
+            {
+                "id": index,
+                "repo": "owner/demo",
+                "kind": "release",
+                "title": "更新 " + str(index),
+                "body": "内容" * 700,
+                "url": f"https://github.com/owner/demo/releases/{index}",
+            }
+            for index in range(3)
+        ]
+
+        async def run():
+            async def summarize_event(event):
+                return "摘要 " + str(event["id"])
+
+            service.summarize_event = summarize_event
+            return await service._notification_batches(events)
+
+        batches = asyncio.run(run())
+        self.assertGreater(len(batches), 1)
+        self.assertEqual(
+            [event["id"] for _, group in batches for event in group], [0, 1, 2]
+        )
+        self.assertTrue(
+            all(
+                len(part) <= MAX_NOTIFICATION_CHARS
+                for parts, _ in batches
+                for part in parts
+            )
+        )
+
+    def test_oversized_single_event_splits_at_newline_without_loss(self):
+        first = "头" * (MAX_NOTIFICATION_CHARS - 1) + "\n"
+        second = "链接 https://github.com/owner/demo/commit/abc"
+        pieces = BridgeService._split_notification(first + second)
+        self.assertEqual(pieces, [first, second])
+        self.assertTrue(all(len(piece) <= MAX_NOTIFICATION_CHARS for piece in pieces))
+
+    def test_oversized_single_event_is_split_without_loss(self):
+        original = "事件内容，含中文和 emoji 🐈\n" * 300
+        pieces = BridgeService._split_notification(original)
+        self.assertGreater(len(pieces), 1)
+        self.assertTrue(all(len(piece) <= MAX_NOTIFICATION_CHARS for piece in pieces))
+        self.assertEqual("".join(pieces), original)

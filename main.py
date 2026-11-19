@@ -156,7 +156,7 @@ class GitHubBridge(Star):
                 )
             elif command == "config":
                 cfg = self.service.settings.value
-                reply = f"GitHub：{cfg.github_owner}\nToken：{'已配置' if cfg.github_token else '未配置'}\n私聊：{cfg.target_umo}\n周期：{cfg.poll_interval}s · 每轮上限：{cfg.max_push_per_cycle}\n允许反馈：{cfg.issue_repositories}"
+                reply = f"GitHub：{cfg.github_owner}\nToken：{'已配置' if cfg.github_token else '未配置'}\n私聊：{cfg.target_umo}\n周期：{cfg.poll_interval}s · 每轮上限：{cfg.max_push_per_cycle} 条动态（合并发送）\n允许反馈：{cfg.issue_repositories}"
             elif command == "baseline":
                 cfg = self.service.settings.value
                 if cfg.enabled or self.service.running:
