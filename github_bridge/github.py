@@ -476,6 +476,7 @@ class GitHubClient:
         for source, enabled in (
             ("commits", self.settings.monitor_commits),
             ("releases", self.settings.monitor_releases),
+            ("pulls", self.settings.monitor_pull_requests),
             ("issues", self.settings.monitor_issues),
             ("issue_events", self.settings.monitor_issues),
             ("comments", self.settings.monitor_issues),
@@ -543,6 +544,18 @@ class GitHubClient:
             },
             events=list({event.key: event for event in events}.values()),
         )
+
+    async def _collect_pulls(
+        self, repo: dict, old: dict | None, sampled_at: str
+    ) -> tuple[dict, list[Event]]:
+        from .pulls import PullRequests
+
+        return await PullRequests(self).collect(repo, old, sampled_at)
+
+    async def pull_request_context(self, event: dict) -> dict:
+        from .pulls import PullRequests
+
+        return await PullRequests(self).context(event)
 
     def _commit_event(self, repo: dict, commit: dict, sampled_at: str) -> Event:
         sha = _sha(commit.get("sha"))

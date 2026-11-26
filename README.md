@@ -1,6 +1,6 @@
 # GitHub Bridge · AstrBot
 
-自动发现本人 GitHub 仓库，把 Commit、Release、Issue 和仓库变化汇总到管理员私聊。附 SukiSU-Ultra / KSU 风格中文工作台，可在 AstrBot 后台查看、创建、评论和关闭/重开 Issue，也支持 QQ issue 草稿确认。
+自动发现本人 GitHub 仓库，把 Commit、Release、PR、Issue 和仓库变化汇总到管理员私聊。附 SukiSU-Ultra / KSU 风格中文工作台，可在 AstrBot 后台查看、创建、评论和关闭/重开 Issue，也支持 QQ issue 草稿确认。
 
 支持 AstrBot **4.29.4+**、Python **3.10+**。前端为随包附带的 HTML/CSS/JS，部署无需 Node、npm 或外部 CDN；管理页是 **AstrBot Dashboard 原生插件视图**，不开放独立端口，不需要单独口令，沿用 Dashboard 登录态。版本变更见 [更新日志](CHANGELOG.md)。
 
@@ -11,6 +11,7 @@
 | 自动发现本人全部仓库 | 周期重新发现，无须维护列表；私有仓库受 Token 可见范围限制，新仓库首次静音建基线 |
 | 默认分支 Commit | 基于提交 SHA 增量识别，保留旧提交去重键 |
 | Release | 含预发布，不通知草稿 |
+| Pull Request | 轮询检测新建、代码/描述和状态变化，每条保留 PR 链接；AI 开启时读取实际文件差异分析 |
 | Issue | 新建、评论、关闭/重开/标签/负责人等状态变化，排除 PR |
 | 仓库元信息 | Star / Fork 数、默认分支、描述、未关闭 Issue 数等快照变化 |
 | 私聊通知 | 目标仅允许 `平台实例ID:FriendMessage:用户ID`，不向群聊主动推送 |
@@ -53,10 +54,14 @@ Token 不预置；首次安装监控默认暂停。`monitor_enabled=false` 会�
 
 管理页的“AI 更新总结”提供以下选项：
 
-- **附加 AI 总结**：默认开启。每条通知保留原始动态和链接，追加 1–2 句中文总结（最多 240 字）。仅基于本条事件已有的标题和正文，不读取完整代码差异、不调用工具。
+- **附加 AI 总结**：默认开启。每条通知保留原始动态和链接，普通动态追加 1–2 句中文总结，PR 追加 2–4 句差异分析（最多 240 字）。PR 由插件先通过 GitHub API 读取描述和实际文件 patch，再交给模型；其他动态使用本条事件的标题、正文和链接。模型不自行打开链接或调用工具。
 - **总结模型 ID**：默认留空，使用推送目标私聊会话的当前文本模型（若该会话没有选择则沿用 AstrBot 默认模型）。也可填写 AstrBot 中的文本模型提供商 ID，使用较轻量的模型控制成本。
 - **总结超时**：默认 15 秒，可设为 3–60 秒。模型不可用、返回空内容或超时，会继续推送原始内容。一次故障后暂停新摘要请求 60 秒，避免本轮通知全部等待超时；管理页会显示降级提示。
 - **允许总结私有内容**：默认关闭。公开动态须同时具备入队时和当前仓库的公开标记才会调用模型；私有仓库、旧版队列、旧监控导入和可见性未知的内容默认仅发原文。确需总结时再显式开启，该内容会由所选模型服务处理。
+
+PR 监控开关 `monitor_pull_requests` 默认开启，独立于 Issue 监控。升级首次加载和重新启用时静默建立基线，不补发历史 PR；后续按更新时间窗口检测当前变化。两次轮询之间的多次变更会合并为最终可见状态，不能逐条还原每次推送或状态往返。分页未覆盖上轮窗口时不推进快照，并显示检查错误，可提高 `max_pages` 后重试。
+
+PR 分析使用**当前 PR 累计差异**，不把它当作本次推送增量。最多读取 20 个文件、每个 patch 1800 字符、上下文约 16000 字符；分页受 `max_pages` 和最多 3 页限制。截断、二进制或缺少 patch 会明确标记；完全没有可用 patch、读取失败、超时或 head/base SHA、描述、状态等版本信息已变化时跳过分析，仍发送原始通知和 PR 链接。差异只在内存中用于本次模型请求，不写入事件正文或数据库；读取差异和模型生成共享总结超时。私有内容默认门禁继续生效，PR 请求前后还会重新核对当前仓库可见性。
 
 摘要成功或失败均保存在 SQLite 独立表，不修改原始事件正文。发送失败后的重试和进程重启会复用已生成的摘要，避免重复花费；已失败的摘要在该通知重试时不重新生成。关闭 AI 总结后不会附带缓存摘要。摘要是 AI 生成内容，请结合原始动态判断。
 
@@ -87,7 +92,7 @@ https://github.com/owner/repo/commit/...
 推荐 GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens：
 
 - Resource owner 选择本人；Repository access 选择 **All repositories** 才能自动覆盖新建私有仓库。选择仓库子集时，插件只能监控获授权部分。
-- 仅监控：**Metadata: Read-only、Contents: Read-only、Issues: Read-only**。
+- 仅监控：**Metadata: Read-only、Contents: Read-only、Issues: Read-only、Pull requests: Read-only**。升级后启用 PR 监控时，请为已有 Token 补充 Pull requests 读取权限；不使用该功能可关闭“PR 更新”开关。
 - 需要 QQ 建 issue 或后台创建/评论/关闭重开：将 **Issues** 改为 **Read and write**。
 - 不需要 Administration、Actions 写权限，也不需要修改代码权限；先在 GitHub 仓库设置中启用 Issues。
 - 设置合理过期日期。使用 classic PAT 时，私有仓库通常需要 `repo`，权限更宽，优先使用 fine-grained Token。

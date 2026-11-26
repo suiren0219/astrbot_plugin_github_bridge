@@ -84,6 +84,7 @@ import { createIssueWorkspace } from './issues.js';
     issue: { label: 'Issue', icon: 'i-issue', className: 'issue' },
     issues: { label: 'Issue', icon: 'i-issue', className: 'issue' },
     'issue-event': { label: 'Issue 动态', icon: 'i-issue', className: 'issue' },
+    'pull-request': { label: 'PR 更新', icon: 'i-commit', className: 'commit' },
     comment: { label: '评论', icon: 'i-chat', className: 'issue' },
     'issue-comment': { label: 'Issue 评论', icon: 'i-chat', className: 'issue' },
     legacy: { label: '旧记录', icon: 'i-import', className: 'metadata' },
@@ -952,7 +953,7 @@ import { createIssueWorkspace } from './issues.js';
     }
     const token = $('#github-token');
     if (token) token.value = '';
-    ['enabled', 'monitor_commits', 'monitor_releases', 'monitor_issues', 'monitor_metadata', 'ai_summary_enabled', 'ai_summary_private'].forEach((key) => {
+    ['enabled', 'monitor_commits', 'monitor_releases', 'monitor_pull_requests', 'monitor_issues', 'monitor_metadata', 'ai_summary_enabled', 'ai_summary_private'].forEach((key) => {
       $$(`[data-setting-toggle="${key}"]`).forEach((button) => setSwitch(button, asBoolean(settings[key]), false));
     });
     if (draft) Object.entries(draft).forEach(([id, value]) => { document.getElementById(id).value = value; });
@@ -1023,6 +1024,7 @@ import { createIssueWorkspace } from './issues.js';
       max_push_per_cycle: Number.parseInt($('#max-push').value, 10),
       monitor_commits: Boolean(state.settings && state.settings.monitor_commits),
       monitor_releases: Boolean(state.settings && state.settings.monitor_releases),
+      monitor_pull_requests: Boolean(state.settings && state.settings.monitor_pull_requests),
       monitor_issues: Boolean(state.settings && state.settings.monitor_issues),
       monitor_metadata: Boolean(state.settings && state.settings.monitor_metadata),
       issue_repositories: $('#issue-repositories').value.trim(),
@@ -1136,6 +1138,7 @@ import { createIssueWorkspace } from './issues.js';
       enabled: '自动监控',
       monitor_commits: '代码提交监控',
       monitor_releases: '版本发布监控',
+      monitor_pull_requests: 'PR 更新监控',
       monitor_issues: 'Issue 监控',
       monitor_metadata: '仓库信息监控',
       ai_summary_enabled: 'AI 总结',

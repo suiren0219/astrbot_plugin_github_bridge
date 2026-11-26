@@ -367,9 +367,22 @@ class BridgeService:
         try:
             from .summary import clean_summary
 
-            text = await asyncio.wait_for(
-                self.summarizer(event, cfg), timeout=cfg.ai_summary_timeout
-            )
+            async def generate() -> str:
+                data = event
+                if event.get("kind") == "pull-request":
+                    context = await self.client.pull_request_context(event)
+                    if not isinstance(context, dict) or not any(
+                        isinstance(item, dict)
+                        and isinstance(item.get("patch"), str)
+                        and item["patch"].strip()
+                        for item in context.get("files", [])
+                    ):
+                        raise ValueError("PR 未提供可分析的代码差异")
+                    # 差异仅用于本次模型请求；不修改队列正文或持久化代码。
+                    data = {**event, "pull_request_context": context}
+                return await self.summarizer(data, cfg)
+
+            text = await asyncio.wait_for(generate(), timeout=cfg.ai_summary_timeout)
             if not isinstance(text, str):
                 raise ValueError("模型未返回文本摘要")
             text = clean_summary(text, cfg.github_token)
@@ -390,6 +403,7 @@ class BridgeService:
         kinds = {
             "commit": "代码提交",
             "release": "新 Release",
+            "pull-request": "PR 更新",
             "issue": "Issue 动态",
             "issue-event": "Issue 动态",
             "comment": "Issue 评论",

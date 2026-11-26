@@ -3,10 +3,13 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from urllib.parse import urlsplit
 
+from github_bridge.github import GitHubClient
 from github_bridge.models import Event, Observation
 from github_bridge.service import BridgeService
 from github_bridge.settings import Settings, SettingsStore
@@ -18,6 +21,30 @@ from github_bridge.summary import (
     summary_prompt,
 )
 from tests.test_service_web import FakeGitHub
+
+
+def pull_context():
+    return {
+        "url": "https://github.com/test-owner/demo/pull/7",
+        "number": 7,
+        "head_sha": "a" * 40,
+        "base_sha": "b" * 40,
+        "description": "为导入函数补充空值处理",
+        "state": "open",
+        "scope": "当前PR累计差异",
+        "files": [
+            {
+                "filename": "src/importer.py",
+                "status": "modified",
+                "additions": 2,
+                "deletions": 0,
+                "patch": "@@ -1 +1,3 @@\n def load(value):\n+    if value is None:\n+        return []",
+            }
+        ],
+        "truncated": False,
+        "missing_patch": False,
+        "limitation": "未执行代码或测试。",
+    }
 
 
 class SummaryAdapterTests(unittest.IsolatedAsyncioTestCase):
@@ -84,6 +111,67 @@ class SummaryAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("FriendMessage", prompt)
         self.assertLess(len(prompt), 4500)
         self.assertIsInstance(json.loads(prompt.split("\n", 1)[1]), dict)
+
+    async def test_pr_model_receives_url_and_real_patch_with_analysis_instructions(
+        self,
+    ):
+        context = SimpleNamespace(
+            llm_generate=AsyncMock(
+                return_value=SimpleNamespace(completion_text="导入逻辑增加空值处理。")
+            ),
+        )
+        source = pull_context()
+        event = {
+            "kind": "pull-request",
+            "title": "更新代码 PR #7",
+            "body": "补充错误处理",
+            "url": source["url"],
+            "pull_request_context": source,
+        }
+        result = await AstrBotSummarizer(context)(
+            event, Settings(ai_summary_provider_id="chosen-model")
+        )
+        self.assertEqual(result, "导入逻辑增加空值处理。")
+        kwargs = context.llm_generate.call_args.kwargs
+        payload = json.loads(kwargs["prompt"].split("\n", 1)[1])
+        self.assertEqual(payload["url"], source["url"])
+        self.assertEqual(
+            payload["pull_request"]["files"][0]["patch"], source["files"][0]["patch"]
+        )
+        self.assertEqual(payload["pull_request"]["scope"], "当前PR累计差异")
+        self.assertIn("潜在问题", kwargs["system_prompt"])
+        self.assertIn("累计 PR 差异不能冒充本次推送的增量", kwargs["system_prompt"])
+        self.assertNotIn("func_tool", kwargs)
+
+    def test_pr_prompt_whitelists_and_bounds_code_without_exposing_credentials(self):
+        source = pull_context()
+        source["private_data"] = "do-not-send-context"
+        source["missing_patch"] = True
+        source["files"] = [
+            {
+                "filename": f"src/{index}.py",
+                "patch": "fake-secret token=private-value\n" + '\\"' * 3000,
+                "raw_url": "do-not-send-raw-url",
+            }
+            for index in range(25)
+        ]
+        event = {
+            "kind": "pull-request",
+            "url": source["url"],
+            "target": "qq:FriendMessage:123",
+            "pull_request_context": source,
+        }
+        prompt = summary_prompt(event, "fake-secret")
+        data = json.loads(prompt.split("\n", 1)[1])["pull_request"]
+        for private in ("fake-secret", "private-value", "do-not-send", "FriendMessage"):
+            self.assertNotIn(private, prompt)
+        self.assertLessEqual(len(json.dumps(data, ensure_ascii=False)), 16000)
+        self.assertTrue(data["truncated"])
+        self.assertTrue(data["missing_patch"])
+        self.assertTrue(data["files"])
+        self.assertLessEqual(len(data["files"]), 20)
+        self.assertTrue(all(len(item["patch"]) <= 1800 for item in data["files"]))
+        self.assertTrue(all(item["truncated"] for item in data["files"]))
 
     def test_metadata_summary_does_not_infer_new_issues_from_count(self):
         event = {
@@ -189,7 +277,7 @@ class SummaryQueueTests(unittest.IsolatedAsyncioTestCase):
         await self.service.close()
         self.temp.cleanup()
 
-    def enqueue(self, key="event-1", repo=None):
+    def enqueue(self, key="event-1", repo=None, kind="commit"):
         repo = repo or self.repo
         cfg = self.settings.value
         self.store.discover(cfg.identity, [repo])
@@ -203,10 +291,11 @@ class SummaryQueueTests(unittest.IsolatedAsyncioTestCase):
                     Event(
                         key,
                         repo["full_name"],
-                        "commit",
+                        kind,
                         "修复导入校验",
                         "修复导入校验\n补充错误处理",
-                        "https://github.com/test-owner/demo",
+                        "https://github.com/test-owner/demo"
+                        + ("/pull/7" if kind == "pull-request" else ""),
                         "",
                     )
                 ],
@@ -224,6 +313,164 @@ class SummaryQueueTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.store.summary(event_id)["state"], "ready")
         self.assertEqual(self.store.counts("test-owner")["sent"], 1)
         self.summarizer.assert_awaited_once()
+
+    async def test_pr_poll_to_model_and_sender_uses_real_collector_and_context(self):
+        from tests.test_pulls import file_item, pull
+
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        repo = {**self.repo, "has_issues": False, "default_branch": None}
+        detail = pull(created_at=now, updated_at=now, changed_files=1)
+        patch = "@@ -1 +1 @@\n-old_parser\n+new_parser"
+
+        async def request(method, url, **kwargs):
+            self.assertEqual(method, "GET")
+            path = urlsplit(url).path
+            if path in ("/repositories/1", "/repos/test-owner/demo"):
+                return dict(repo), {}
+            if path.endswith("/releases"):
+                return [], {}
+            if path.endswith("/pulls"):
+                return [dict(detail)], {}
+            if path.endswith("/pulls/1"):
+                return dict(detail), {}
+            if path.endswith("/pulls/1/files"):
+                return [file_item(patch=patch)], {}
+            raise AssertionError(path)
+
+        await self.service.client.close()
+        client = GitHubClient(self.settings.value)
+        client.list_repositories = AsyncMock(return_value=[repo])
+        client._request = AsyncMock(side_effect=request)
+        self.service.client = client
+        context = SimpleNamespace(
+            llm_generate=AsyncMock(
+                return_value=SimpleNamespace(
+                    completion_text="解析器调用发生替换；仅分析可见的累计差异。"
+                )
+            ),
+            get_current_chat_provider_id=AsyncMock(return_value="test-model"),
+        )
+        self.service.summarizer = AstrBotSummarizer(context)
+
+        self.assertEqual(await self.service.check(), {"queued": 0, "sent": 0})
+        context.llm_generate.assert_not_awaited()
+        self.sender.assert_not_awaited()
+        detail["head"] = {"sha": "c" * 40}
+        detail["body"] = "替换解析器调用"
+        self.assertEqual(await self.service.check(), {"queued": 1, "sent": 1})
+        payload = json.loads(
+            context.llm_generate.call_args.kwargs["prompt"].split("\n", 1)[1]
+        )
+        self.assertEqual(payload["pull_request"]["files"][0]["patch"], patch)
+        self.assertEqual(payload["pull_request"]["head_sha"], "c" * 40)
+        message = self.sender.call_args.args[1]
+        self.assertIn("[GitHub · PR 更新]", message)
+        self.assertIn("AI 总结：解析器调用发生替换", message)
+        self.assertTrue(message.endswith("https://github.com/test-owner/demo/pull/1"))
+        self.assertNotIn("new_parser", "\n".join(self.store.db.iterdump()))
+        self.assertEqual(await self.service.check(), {"queued": 0, "sent": 0})
+        context.llm_generate.assert_awaited_once()
+        self.sender.assert_awaited_once()
+
+    async def test_pr_diff_is_ephemeral_and_retry_reuses_summary_after_reopen(self):
+        event_id = self.enqueue(kind="pull-request")
+        source = pull_context()
+        fetch = AsyncMock(return_value=source)
+        self.service.client.pull_request_context = fetch
+        self.sender.side_effect = RuntimeError("QQ offline")
+        await self.service.check()
+        data = self.summarizer.call_args.args[0]
+        self.assertEqual(
+            data["pull_request_context"]["files"][0]["patch"],
+            source["files"][0]["patch"],
+        )
+        self.assertNotIn("pull_request_context", fetch.call_args.args[0])
+        message = self.sender.call_args.args[1]
+        self.assertIn("[GitHub · PR 更新]", message)
+        self.assertTrue(message.endswith(source["url"]))
+        self.assertNotIn("if value is None", message)
+        self.assertNotIn("if value is None", "\n".join(self.store.db.iterdump()))
+
+        self.store.close()
+        self.store = Store(self.root / "bridge.sqlite3")
+        self.service.store = self.store
+        self.store.retry("test-owner", self.settings.value.target_umo, event_id)
+        self.sender.side_effect = None
+        await self.service.check()
+        fetch.assert_awaited_once()
+        self.summarizer.assert_awaited_once()
+        self.assertTrue(self.sender.call_args.args[1].endswith(source["url"]))
+        self.assertEqual(self.store.events("test-owner")[0]["status"], "sent")
+
+    async def test_pr_disabled_private_and_cooldown_skip_diff_fetch(self):
+        event_id = self.enqueue(kind="pull-request")
+        fetch = AsyncMock(return_value=pull_context())
+        self.service.client.pull_request_context = fetch
+        event = self.store.queue("test-owner", self.settings.value.target_umo, 5)[0]
+        self.settings.update({"ai_summary_enabled": False})
+        self.assertEqual(await self.service.summarize_event(event), "")
+        self.settings.update({"ai_summary_enabled": True})
+        self.service._summary_cooldown = float("inf")
+        self.assertEqual(await self.service.summarize_event(event), "")
+        self.service._summary_cooldown = 0
+        for private in (True, None):
+            self.store.discover("test-owner", [{**self.repo, "private": private}])
+            self.assertEqual(await self.service.summarize_event(event), "")
+        self.assertIsNone(self.store.summary(event_id))
+        fetch.assert_not_awaited()
+        self.summarizer.assert_not_awaited()
+        self.settings.update({"ai_summary_private": True})
+        self.assertTrue(await self.service.summarize_event(event))
+        fetch.assert_awaited_once()
+
+    async def test_pr_without_patch_or_with_changed_version_keeps_original_and_link(
+        self,
+    ):
+        for index, source in enumerate(
+            (
+                {"files": []},
+                {"files": [{"patch": "", "missing_patch": True}]},
+                RuntimeError("PR head/base SHA 已变化 provider-secret"),
+            )
+        ):
+            with self.subTest(index=index):
+                self.service._summary_cooldown = 0
+                event_id = self.enqueue(f"pr-{index}", kind="pull-request")
+                fetch = AsyncMock()
+                if isinstance(source, Exception):
+                    fetch.side_effect = source
+                else:
+                    fetch.return_value = source
+                self.service.client.pull_request_context = fetch
+                await self.service.check()
+                message = self.sender.call_args.args[1]
+                self.assertIn("补充错误处理", message)
+                self.assertTrue(
+                    message.endswith("https://github.com/test-owner/demo/pull/7")
+                )
+                self.assertNotIn("AI 总结", message)
+                self.assertNotIn("provider-secret", str(self.service.status()))
+                self.assertEqual(self.store.summary(event_id)["state"], "failed")
+                self.assertEqual(self.store.events("test-owner")[0]["status"], "sent")
+        self.summarizer.assert_not_awaited()
+
+    async def test_pr_context_timeout_is_cancelled_and_original_is_sent(self):
+        self.enqueue(kind="pull-request")
+        cancelled = asyncio.Event()
+
+        async def never_finishes(*args):
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+
+        self.service.client.pull_request_context = AsyncMock(side_effect=never_finishes)
+        self.settings.value.ai_summary_timeout = 0.01
+        await self.service.check()
+        self.assertTrue(cancelled.is_set())
+        self.summarizer.assert_not_awaited()
+        self.assertTrue(self.sender.call_args.args[1].endswith("/pull/7"))
+        self.assertEqual(self.store.counts("test-owner")["sent"], 1)
 
     async def test_send_retry_reuses_summary_after_database_reopen(self):
         event_id = self.enqueue()

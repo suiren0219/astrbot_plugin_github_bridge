@@ -23,6 +23,7 @@ class Settings:
     max_push_per_cycle: int = 5
     monitor_commits: bool = True
     monitor_releases: bool = True
+    monitor_pull_requests: bool = True
     monitor_issues: bool = True
     monitor_metadata: bool = True
     issue_repositories: str = ""
@@ -61,6 +62,7 @@ class Settings:
             "enabled",
             "monitor_commits",
             "monitor_releases",
+            "monitor_pull_requests",
             "monitor_issues",
             "monitor_metadata",
             "ai_summary_enabled",

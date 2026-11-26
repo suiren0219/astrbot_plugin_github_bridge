@@ -1,6 +1,7 @@
 import copy
 import time
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 from urllib.parse import urlsplit
 
@@ -39,6 +40,7 @@ class CollectorTests(unittest.IsolatedAsyncioTestCase):
         self.head = commit("a")
         self.issues = []
         self.releases = []
+        self.pulls = []
         self.comments = []
         self.activities = []
         self.issue_details = {}
@@ -60,6 +62,8 @@ class CollectorTests(unittest.IsolatedAsyncioTestCase):
             return copy.deepcopy(self.compare), {}
         if path.endswith("/releases"):
             return copy.deepcopy(self.releases), {}
+        if path.endswith("/pulls"):
+            return copy.deepcopy(self.pulls), {}
         if path.endswith("/issues/events"):
             return copy.deepcopy(self.activities), {}
         if path.endswith("/issues/comments"):
@@ -218,6 +222,41 @@ class CollectorTests(unittest.IsolatedAsyncioTestCase):
         result = await self.client.observe(self.repo, None)
         self.assertFalse(result.snapshot["sources"]["issues"]["enabled"])
         self.assertFalse(any("/issues" in call[1] for call in self.calls))
+
+    async def test_pr_source_upgrade_and_reenable_are_silent_with_issues_disabled(self):
+        from tests.test_pulls import pull
+
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        self.repo["has_issues"] = False
+        self.pulls = [pull(updated_at=now, created_at=now)]
+        previous = (await self.client.observe(self.repo, None)).snapshot
+        self.assertTrue(previous["sources"]["pulls"]["enabled"])
+        previous["sources"].pop("pulls")
+        upgraded = await self.client.observe(self.repo, previous)
+        self.assertEqual(upgraded.events, [])
+        self.assertEqual(
+            upgraded.snapshot["sources"]["commits"], previous["sources"]["commits"]
+        )
+        self.pulls[0]["title"] = "修改 PR 标题"
+        changed = await self.client.observe(self.repo, upgraded.snapshot)
+        self.assertEqual([event.kind for event in changed.events], ["pull-request"])
+        self.assertTrue(changed.events[0].url.endswith("/pull/1"))
+        self.client.settings.monitor_pull_requests = False
+        disabled = await self.client.observe(self.repo, changed.snapshot)
+        self.assertEqual(disabled.snapshot["sources"]["pulls"], {"enabled": False})
+        self.pulls[0]["title"] = "暂停期间的修改"
+        self.client.settings.monitor_pull_requests = True
+        self.assertEqual(
+            (await self.client.observe(self.repo, disabled.snapshot)).events, []
+        )
+
+    async def test_pr_source_failure_does_not_advance_other_sources(self):
+        previous = (await self.client.observe(self.repo, None)).snapshot
+        original = copy.deepcopy(previous)
+        self.client._collect_pulls = AsyncMock(side_effect=GitHubError("PR incomplete"))
+        with self.assertRaisesRegex(GitHubError, "PR incomplete"):
+            await self.client.observe(self.repo, previous)
+        self.assertEqual(previous, original)
 
     async def test_issue_label_changes_are_reported(self):
         previous = (await self.client.observe(self.repo, None)).snapshot
